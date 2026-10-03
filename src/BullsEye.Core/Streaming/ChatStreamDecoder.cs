@@ -30,33 +30,62 @@ public sealed class ChatStreamDecoder
                 continue;
             }
 
-            using var json = JsonDocument.Parse(data);
-            if (json.RootElement.TryGetProperty("error", out var error))
+            JsonDocument json;
+            try
             {
-                events.Add(new StreamFailed(ReadErrorMessage(error)));
+                json = JsonDocument.Parse(data);
+            }
+            catch (JsonException)
+            {
+                events.Add(new StreamFailed("Malformed stream chunk"));
                 continue;
             }
 
-            var content = ReadDeltaContent(json.RootElement);
-            if (!string.IsNullOrEmpty(content))
+            using (json)
             {
-                events.Add(new TextDelta(content));
+                DecodeChunk(json.RootElement, events);
             }
         }
 
         return events;
     }
 
-    private static string ReadErrorMessage(JsonElement error) =>
-        error.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.String
-            ? message.GetString()!
-            : "Unknown stream error";
-
-    private static string? ReadDeltaContent(JsonElement root)
+    private static void DecodeChunk(JsonElement root, List<StreamEvent> events)
     {
-        if (!root.TryGetProperty("choices", out var choices) || choices.GetArrayLength() == 0) return null;
-        if (!choices[0].TryGetProperty("delta", out var delta)) return null;
-        if (!delta.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.String) return null;
-        return content.GetString();
+        if (root.ValueKind != JsonValueKind.Object) return;
+
+        if (root.TryGetProperty("error", out var error))
+        {
+            events.Add(new StreamFailed(ReadErrorMessage(error)));
+            return;
+        }
+
+        if (!root.TryGetProperty("choices", out var choices)
+            || choices.ValueKind != JsonValueKind.Array
+            || choices.GetArrayLength() == 0
+            || !choices[0].TryGetProperty("delta", out var delta))
+        {
+            return;
+        }
+
+        var reasoning = ReadString(delta, "reasoning");
+        if (!string.IsNullOrEmpty(reasoning))
+        {
+            events.Add(new ReasoningDelta(reasoning));
+        }
+
+        var content = ReadString(delta, "content");
+        if (!string.IsNullOrEmpty(content))
+        {
+            events.Add(new TextDelta(content));
+        }
     }
+
+    private static string ReadErrorMessage(JsonElement error) =>
+        error.ValueKind == JsonValueKind.Object ? ReadString(error, "message") ?? "Unknown stream error" : "Unknown stream error";
+
+    private static string? ReadString(JsonElement element, string property) =>
+        element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
 }

@@ -40,6 +40,30 @@ public class ChatStreamDecoderTests
     }
 
     [Fact]
+    public void Feed_EmitsReasoningDelta_ForThinkingChunk()
+    {
+        var decoder = new ChatStreamDecoder();
+        var chunk = "data: {\"provider\":\"DeepInfra\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\",\"role\":\"assistant\"," +
+                    "\"reasoning\":\" user wants MATLAB\",\"reasoning_details\":[{\"type\":\"reasoning.text\",\"text\":\" user wants MATLAB\"}]}," +
+                    "\"finish_reason\":null}]}\n\n";
+
+        var events = decoder.Feed(chunk);
+
+        Assert.Equal([new ReasoningDelta(" user wants MATLAB")], events);
+    }
+
+    [Fact]
+    public void Feed_EmitsStreamFailed_OnMalformedJson_AndKeepsDecoding()
+    {
+        var decoder = new ChatStreamDecoder();
+
+        var events = decoder.Feed("data: {\"choices\":[{\"delta\n\n" + Delta("ok"));
+
+        Assert.IsType<StreamFailed>(events[0]);
+        Assert.Equal(new TextDelta("ok"), events[1]);
+    }
+
+    [Fact]
     public void Feed_EmitsStreamFailed_OnMidStreamError()
     {
         var decoder = new ChatStreamDecoder();
