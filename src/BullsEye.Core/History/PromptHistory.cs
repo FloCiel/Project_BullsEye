@@ -5,6 +5,12 @@ public sealed class PromptHistory(int capacity)
 {
     private readonly List<string> _items = [];
 
+    /// <summary>설정 파일에 저장된 목록(최신순)으로 복원한다.</summary>
+    public PromptHistory(int capacity, IEnumerable<string> saved) : this(capacity)
+    {
+        _items.AddRange(saved.Take(capacity));
+    }
+
     public IReadOnlyList<string> Items => _items;
 
     public void Add(string prompt)

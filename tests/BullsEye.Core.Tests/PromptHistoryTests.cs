@@ -14,6 +14,14 @@ public class PromptHistoryTests
     }
 
     [Fact]
+    public void Restore_KeepsSavedOrder_AndTrimsToCapacity()
+    {
+        var history = new PromptHistory(capacity: 2, saved: ["newest", "middle", "oldest"]);
+
+        Assert.Equal(["newest", "middle"], history.Items);
+    }
+
+    [Fact]
     public void Add_DropsOldest_WhenOverCapacity()
     {
         var history = new PromptHistory(capacity: 2);
