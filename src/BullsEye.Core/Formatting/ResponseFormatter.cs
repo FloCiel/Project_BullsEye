@@ -17,7 +17,8 @@ public static class ResponseFormatter
             ? ""
             : shape.Indent + line[commonIndent.Length..]);
 
-        return string.Join(shape.LineEnding, reindented);
+        var code = string.Join(shape.LineEnding, reindented);
+        return shape.EndsWithLineBreak ? code + shape.LineEnding : code;
     }
 
     private static string CommonIndent(string[] lines)

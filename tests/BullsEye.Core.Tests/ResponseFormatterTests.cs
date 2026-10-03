@@ -23,6 +23,19 @@ public class ResponseFormatterTests
     }
 
     [Theory]
+    [InlineData("    area = w * h;\r\n", "area = w*h;", "    area = w*h;\r\n")]
+    [InlineData("    area = w * h;\n", "```\narea = w*h;\n```\n\n", "    area = w*h;\n")]
+    [InlineData("    area = w * h;", "area = w*h;\n", "    area = w*h;")]
+    public void Format_KeepsSelectionTrailingLineBreak(string selection, string raw, string expected)
+    {
+        // 줄 전체를 선택하면(Shift+End, 다음 줄 시작까지 드래그) 줄바꿈도 선택된다.
+        // 붙여넣었을 때 다음 줄과 합쳐지지 않게 같은 줄바꿈으로 끝내야 한다.
+        var result = ResponseFormatter.Format(raw, SelectionShape.From(selection));
+
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
     [InlineData("if x > 0\n    y = 2;\nend")]
     [InlineData("    if x > 0\n        y = 2;\n    end")]
     [InlineData("        if x > 0\n            y = 2;\n        end")]

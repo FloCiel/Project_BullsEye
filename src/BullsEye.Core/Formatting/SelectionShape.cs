@@ -1,7 +1,8 @@
 namespace BullsEye.Core;
 
 /// <summary>붙여넣을 위치(선택 영역)의 형태. 결과를 여기에 맞춘다.</summary>
-public sealed record SelectionShape(string Indent, string LineEnding)
+/// <param name="EndsWithLineBreak">줄 전체를 선택해 줄바꿈까지 포함됨 → 결과도 줄바꿈으로 끝낸다.</param>
+public sealed record SelectionShape(string Indent, string LineEnding, bool EndsWithLineBreak = false)
 {
     public static SelectionShape None { get; } = new("", "\r\n");
 
@@ -14,6 +15,6 @@ public sealed record SelectionShape(string Indent, string LineEnding)
         var firstLine = selectedText.Split('\n')[0];
         var indent = firstLine[..(firstLine.Length - firstLine.TrimStart(' ', '\t').Length)];
 
-        return new SelectionShape(indent, lineEnding);
+        return new SelectionShape(indent, lineEnding, selectedText.EndsWith('\n'));
     }
 }
