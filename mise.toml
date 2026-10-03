@@ -1,0 +1,23 @@
+# .NET SDK 버전은 global.json에서 고정 (10.0.1xx, latestFeature)
+
+[tasks.restore]
+description = "Restore NuGet packages"
+run = "dotnet restore BullsEye.slnx"
+
+[tasks.build]
+description = "Build all projects (Debug)"
+depends = ["restore"]
+run = "dotnet build BullsEye.slnx --no-restore"
+
+[tasks.test]
+description = "Run unit tests"
+depends = ["restore"]
+run = "dotnet test BullsEye.slnx --no-restore"
+
+[tasks.format]
+description = "Verify code formatting"
+run = "dotnet format BullsEye.slnx --verify-no-changes"
+
+[tasks.publish]
+description = "Publish portable single-file exe to dist/"
+run = "dotnet publish src/BullsEye/BullsEye.csproj -c Release -o dist"

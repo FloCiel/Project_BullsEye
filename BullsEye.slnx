@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BullsEye.Core/BullsEye.Core.csproj" />
+    <Project Path="src/BullsEye/BullsEye.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BullsEye.Core.Tests/BullsEye.Core.Tests.csproj" />
+  </Folder>
+</Solution>
