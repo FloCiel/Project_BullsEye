@@ -19,6 +19,14 @@ public sealed class WrongPinException(Exception? inner = null)
 public sealed class CorruptSettingsException(string detail, Exception? inner = null)
     : BullsEyeException($"설정 파일이 손상되었습니다 ({detail}).", inner: inner);
 
+/// <summary>네트워크 연결 실패 (학교망 끊김, DNS, 연결 끊김). 사용자가 Enter로 재시도한다.</summary>
+public sealed class NetworkException(Exception inner)
+    : BullsEyeException("네트워크 연결에 실패했습니다.", inner: inner);
+
+/// <summary>응답 헤더나 첫 응답(추론 또는 코드)이 제한 시간 안에 오지 않음.</summary>
+public sealed class ResponseTimeoutException(Exception? inner = null)
+    : BullsEyeException("응답 시간이 초과되었습니다.", inner: inner);
+
 /// <summary>AI provider가 요청을 거절함. 하위 타입이 원인을 구분한다.</summary>
 public class ProviderException(string message, bool isRetryable = false) : BullsEyeException(message, isRetryable);
 

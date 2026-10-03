@@ -10,9 +10,14 @@ depends = ["restore"]
 run = "dotnet build BullsEye.slnx --no-restore"
 
 [tasks.test]
-description = "Run unit tests"
+description = "Run unit tests (excludes paid smoke tests)"
 depends = ["restore"]
-run = "dotnet test BullsEye.slnx --no-restore"
+run = "dotnet test BullsEye.slnx --no-restore --filter Category!=Smoke"
+
+[tasks.smoke]
+description = "Call the real OpenRouter API (needs OPENROUTER_API_KEY, costs credits)"
+depends = ["restore"]
+run = "dotnet test BullsEye.slnx --no-restore --filter Category=Smoke --logger console;verbosity=normal"
 
 [tasks.format]
 description = "Verify code formatting"
