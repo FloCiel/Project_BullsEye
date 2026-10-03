@@ -6,6 +6,8 @@
     <RootNamespace>BullsEye</RootNamespace>
     <AssemblyName>BullsEye</AssemblyName>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <!-- LibraryImport(P/Invoke 소스 생성)의 포인터 인자 -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <!-- USB portable publish: single exe, no runtime install, nothing extracted to %TEMP% -->
