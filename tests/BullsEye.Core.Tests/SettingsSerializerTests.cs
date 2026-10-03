@@ -16,12 +16,19 @@ public class SettingsSerializerTests
             HistoryCapacity = 5,
             History = ["주석 달아줘", "for문으로"],
             DenyDataCollection = false,
+            EnableReasoning = false,
             SelectionCaptureTimeoutMs = 800,
         };
 
         var restored = SettingsSerializer.Deserialize(SettingsSerializer.Serialize(settings));
 
         Assert.Equivalent(settings, restored, strict: true);
+    }
+
+    [Fact]
+    public void NewSettings_EnableReasoningByDefault()
+    {
+        Assert.True(new Settings().EnableReasoning);
     }
 
     [Theory]

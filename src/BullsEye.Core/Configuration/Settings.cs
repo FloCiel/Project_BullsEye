@@ -20,6 +20,9 @@ public sealed record Settings
     /// <summary>OpenRouter provider.data_collection = "deny".</summary>
     public bool DenyDataCollection { get; init; } = true;
 
+    /// <summary>추론 모델의 생각 단계를 켠다. 느리고 비싸지만 정확도가 우선이라 기본 켬.</summary>
+    public bool EnableReasoning { get; init; } = true;
+
     /// <summary>Ctrl+C 시뮬레이션 후 클립보드 변화를 기다리는 시간.</summary>
     public int SelectionCaptureTimeoutMs { get; init; } = 300;
 }
