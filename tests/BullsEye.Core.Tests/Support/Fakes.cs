@@ -69,3 +69,68 @@ internal sealed class FakeClipboard : IClipboardService
 
     public void ClearIfOwned() => ClearCalls++;
 }
+
+internal sealed class FakeWindows(ForegroundWindow? current) : IForegroundWindowProbe
+{
+    public List<ForegroundWindow> Restored { get; } = [];
+
+    public ForegroundWindow? Capture() => current;
+
+    public bool Restore(ForegroundWindow window)
+    {
+        Restored.Add(window);
+        return true;
+    }
+}
+
+/// <summary>캡처를 <see cref="Release"/>할 때까지 붙잡아 둘 수 있다 (재진입 테스트).</summary>
+internal sealed class FakeSelection(string? selection) : ISelectionCapture
+{
+    private TaskCompletionSource? _gate;
+
+    public int Calls { get; private set; }
+
+    public FakeSelection Hold()
+    {
+        _gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        return this;
+    }
+
+    public void Release() => _gate?.SetResult();
+
+    public async Task<string?> CaptureAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        Calls++;
+        if (_gate is not null) await _gate.Task;
+        return selection;
+    }
+}
+
+internal sealed class FakeCaret(PopupAnchor anchor) : ICaretLocator
+{
+    public PopupAnchor Locate(ForegroundWindow window) => anchor;
+}
+
+internal sealed class FakePopupHost : IPopupHost
+{
+    public List<PopupRequest> Opened { get; } = [];
+    public int Activations { get; private set; }
+
+    public bool IsOpen { get; private set; }
+
+    public event EventHandler? Closed;
+
+    public void Open(PopupRequest request)
+    {
+        Opened.Add(request);
+        IsOpen = true;
+    }
+
+    public void Activate() => Activations++;
+
+    public void Close()
+    {
+        IsOpen = false;
+        Closed?.Invoke(this, EventArgs.Empty);
+    }
+}
