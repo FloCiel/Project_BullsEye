@@ -135,3 +135,10 @@ internal sealed class FakePopupHost : IPopupHost
         Closed?.Invoke(this, new PopupClosedEventArgs(returnFocus));
     }
 }
+
+internal sealed class FakeClock(DateTime start) : IClock
+{
+    public DateTime UtcNow { get; private set; } = start;
+
+    public void Advance(TimeSpan by) => UtcNow += by;
+}
