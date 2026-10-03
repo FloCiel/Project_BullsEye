@@ -71,6 +71,16 @@ internal static partial class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool GetCursorPos(out POINT lpPoint);
 
+    // Windows 11 둥근 모서리. 이전 Windows에서는 실패해도 무시한다.
+    public const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+    public const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+    public const int DWMWCP_ROUND = 2;
+
+    [LibraryImport("dwmapi.dll")]
+    public static partial int DwmSetWindowAttribute(nint hwnd, int attribute, ref int value, int size);
+
+    public const int CS_DROPSHADOW = 0x00020000;
+
     [StructLayout(LayoutKind.Sequential)]
     public struct POINT
     {
