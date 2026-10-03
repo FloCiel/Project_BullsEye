@@ -1,5 +1,6 @@
 using BullsEye.Core;
 using BullsEye.Diagnostics;
+using BullsEye.Platform;
 using BullsEye.Ui;
 
 namespace BullsEye;
@@ -13,6 +14,7 @@ internal static class Program
     private static void Main(string[] args)
     {
         ApplicationConfiguration.Initialize();
+        Shutdown.InstallCrashHandlers();
 
         // BullsEye.exe --probe [단축키]  : Win32 레이어 진단
         if (args.Length > 0 && args[0] == "--probe")
@@ -21,6 +23,14 @@ internal static class Program
             return;
         }
 
+        // 이미 실행 중이면 그쪽 설정 창을 띄우게 하고 끝낸다.
+        using var instance = SingleInstance.TryAcquire();
+        if (instance is null) return;
+
+        // USB가 빠지면 즉시 종료 (메모리의 키도 함께 사라진다).
+        using var usb = new UsbWatcher();
+        usb.Removed += (_, _) => Shutdown.Emergency();
+
         var store = new SettingsStore(SettingsPath);
         // 타임아웃은 OpenRouterProvider가 관리한다 (긴 추론 응답이 100초 기본값에 끊기지 않게).
         using var http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
@@ -28,8 +38,13 @@ internal static class Program
 
         // 실행할 때마다 설정 창 (잠금 해제) → 닫으면 트레이로.
         using var settings = new SettingsForm(store, catalog, store.Exists ? SettingsMode.Unlock : SettingsMode.FirstRun);
+        Action onSecondLaunch = () => settings.Activate();
+        instance.Listen(SynchronizationContext.Current!, () => onSecondLaunch());
+
         if (settings.ShowDialog() != DialogResult.OK || settings.Result is null || settings.Pin is null) return;
 
-        Application.Run(new TrayApplicationContext(store, http, catalog, settings.Result, settings.Pin));
+        var tray = new TrayApplicationContext(store, http, catalog, settings.Result, settings.Pin);
+        onSecondLaunch = tray.OpenSettings;
+        Application.Run(tray);
     }
 }

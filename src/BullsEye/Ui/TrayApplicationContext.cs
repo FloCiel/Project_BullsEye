@@ -18,12 +18,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly ForegroundWindowProbe _windows = new();
     private readonly SelectionCapture _selection = new();
     private readonly CaretLocator _caret = new();
+    private readonly System.Windows.Forms.Timer _idleTimer = new() { Interval = 30_000 };
 
     private Settings _settings;
     private string _pin;
     private PromptHistory _history;
     private PopupHost _popup = null!;
     private AppController _controller = null!;
+    private IdleTracker _idle = null!;
     private bool _paused;
     private bool _settingsOpen;
 
@@ -46,14 +48,29 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _tray = new NotifyIcon { Icon = AppIcon.Create(), Text = "BullsEye", ContextMenuStrip = menu, Visible = true };
         _tray.DoubleClick += (_, _) => OpenSettings();
         _hotkey.Pressed += async (_, _) => await OnHotkeyAsync();
+        _idleTimer.Tick += (_, _) => CheckIdle();
+
+        // 정상 종료든 USB 제거든 오류든: 우리가 넣은 클립보드 내용과 트레이 아이콘을 남기지 않는다.
+        Shutdown.Register(() => _clipboard.ClearIfOwned());
+        Shutdown.Register(() => _hotkey.Dispose());
+        Shutdown.Register(() =>
+        {
+            _tray.Visible = false;
+            _tray.Dispose();
+        });
 
         Apply(settings);
+        _idleTimer.Start();
     }
 
     private void Apply(Settings settings)
     {
         _settings = settings;
         _history = new PromptHistory(settings.HistoryCapacity, _history.Items);
+        var timeout = TimeSpan.FromMinutes(settings.IdleTimeoutMinutes);
+        // 5분 전에 알리되, 짧은 설정(예: 5분)에서 시작하자마자 알리지 않게 절반을 넘기지 않는다.
+        var warnBefore = TimeSpan.FromTicks(Math.Min(IdleWarning.Ticks, timeout.Ticks / 2));
+        _idle = new IdleTracker(timeout, warnBefore, new SystemClock());
 
         var provider = CreateProvider(settings);
         var options = new SessionOptions(settings.FavoriteModels, settings.DenyDataCollection, settings.EnableReasoning);
@@ -93,8 +110,27 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
     }
 
+    private static readonly TimeSpan IdleWarning = TimeSpan.FromMinutes(5);
+
+    /// <summary>공용 PC에 꽂아둔 채 자리를 떠도 키가 살아 있지 않게, 오래 안 쓰면 종료한다.</summary>
+    private void CheckIdle()
+    {
+        if (_popup.IsOpen || _settingsOpen) _idle.Touch();
+
+        switch (_idle.Check())
+        {
+            case Core.IdleWarning warning:
+                Notify($"{Math.Max(1, (int)Math.Ceiling(warning.Remaining.TotalMinutes))}분 동안 사용하지 않으면 BullsEye가 종료됩니다. 단축키를 누르면 연장됩니다.", ToolTipIcon.Info);
+                break;
+            case IdleExpired:
+                Exit();
+                break;
+        }
+    }
+
     private async Task OnHotkeyAsync()
     {
+        _idle.Touch();
         if (_paused || _settingsOpen) return;
         try
         {
@@ -106,7 +142,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
     }
 
-    private void OpenSettings()
+    /// <summary>트레이 메뉴, 더블클릭, 두 번째 실행에서 연다.</summary>
+    public void OpenSettings()
     {
         if (_settingsOpen) return;
         _settingsOpen = true;
@@ -165,10 +202,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
             // USB가 이미 빠졌을 수 있다. 종료는 계속한다.
         }
 
-        _clipboard.ClearIfOwned();
-        _hotkey.Dispose();
-        _tray.Visible = false;
-        _tray.Dispose();
+        _idleTimer.Dispose();
+        Shutdown.RunCleanups();
         ExitThread();
     }
 }
