@@ -75,6 +75,36 @@ public class ConversationTests
     }
 
     [Fact]
+    public void NewAsk_AfterFailedFirstRequest_ReplacesFailedInstruction()
+    {
+        var conversation = Conversation.Start("area = ", "MATLAB");
+        conversation.Ask("사각형 넓이로 완성");
+
+        conversation.Ask("원 넓이로 완성");
+        var messages = conversation.BuildMessages();
+
+        Assert.Equal([ChatRole.System, ChatRole.User], Roles(messages));
+        Assert.Contains("area = ", messages[1].Content);
+        Assert.Contains("원 넓이로 완성", messages[1].Content);
+        Assert.DoesNotContain("사각형", messages[1].Content);
+    }
+
+    [Fact]
+    public void NewAsk_AfterFailedFollowUp_ReplacesOnlyTheFailedFollowUp()
+    {
+        var conversation = Conversation.Start("area = ", "MATLAB");
+        conversation.Ask("사각형 넓이로 완성");
+        conversation.RecordResult("area = width * height;");
+        conversation.Ask("변수명을 w, h로");
+
+        conversation.Ask("주석 달아줘");
+        var messages = conversation.BuildMessages();
+
+        Assert.Equal([ChatRole.System, ChatRole.User, ChatRole.Assistant, ChatRole.User], Roles(messages));
+        Assert.Equal("주석 달아줘", messages[3].Content);
+    }
+
+    [Fact]
     public void BlankAsk_AsFirstInstruction_Throws()
     {
         var conversation = Conversation.Start("area = ", "MATLAB");

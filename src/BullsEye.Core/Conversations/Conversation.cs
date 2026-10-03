@@ -27,6 +27,7 @@ public sealed class Conversation
     /// <summary>
     /// 지시를 추가한다. 빈 지시는 "마지막 지시로 다시 생성": 마지막 결과를 버리고
     /// (실패해서 결과가 없으면 그대로) 같은 메시지를 다시 보내게 한다.
+    /// 결과 없이 실패한 지시 뒤에 새 지시가 오면 실패한 지시를 교체한다.
     /// </summary>
     public void Ask(string instruction)
     {
@@ -43,6 +44,11 @@ public sealed class Conversation
             }
 
             return;
+        }
+
+        if (_turns.Count > 0 && _turns[^1].Role == ChatRole.User)
+        {
+            _turns.RemoveAt(_turns.Count - 1);
         }
 
         var content = _turns.Count == 0 ? FirstUserMessage(instruction) : instruction;
