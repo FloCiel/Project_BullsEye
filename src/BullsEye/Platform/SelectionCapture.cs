@@ -21,7 +21,7 @@ internal sealed class SelectionCapture : ISelectionCapture
 
     public async Task<string?> CaptureAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
     {
-        // 단축키(Ctrl+Alt+Space)를 아직 누르고 있으면 Ctrl+C가 Ctrl+Alt+C로 들어간다.
+        // 단축키(예: Ctrl+Alt+K)를 아직 누르고 있으면 Ctrl+C가 Ctrl+Alt+C로 들어간다.
         var waitStarted = DateTime.UtcNow;
         var stillHeld = await WaitForModifiersReleasedAsync(cancellationToken);
         var waited = (DateTime.UtcNow - waitStarted).TotalMilliseconds;

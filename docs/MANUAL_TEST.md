@@ -5,8 +5,8 @@ Win32 레이어(단축키, 클립보드, 키 입력 시뮬레이션)는 자동 �
 ## 진단 모드
 
 ```bash
-BullsEye.exe --probe                 # 기본 단축키 (Ctrl+Alt+Space)
-BullsEye.exe --probe "Ctrl+Alt+K"    # 단축키 지정
+BullsEye.exe --probe                 # 기본 단축키 (Ctrl+Alt+K)
+BullsEye.exe --probe "Ctrl+Shift+F12" # 단축키 지정
 ```
 
 다른 창에서 텍스트를 선택하고 단축키를 누르면, 진단 창에 활성 창 · 언어 · 위치(캐럿/마우스) · 캡처 결과가 표시된다.

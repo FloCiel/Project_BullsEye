@@ -8,7 +8,7 @@ public sealed record Settings
     /// <summary>OpenRouter 모델 ID. 첫 번째가 기본 모델, 팝업에서 Ctrl+Tab으로 순환.</summary>
     public IReadOnlyList<string> FavoriteModels { get; init; } = [];
 
-    public string Hotkey { get; init; } = "Ctrl+Alt+Space";
+    public string Hotkey { get; init; } = "Ctrl+Alt+K";
 
     public int IdleTimeoutMinutes { get; init; } = 60;
 

@@ -26,6 +26,14 @@ public class SettingsSerializerTests
     }
 
     [Fact]
+    public void NewSettings_DefaultHotkeyIsCtrlAltK()
+    {
+        // Ctrl+Alt+Space는 개발 PC에서 다른 프로그램이 선점하고 있었다.
+        Assert.Equal("Ctrl+Alt+K", new Settings().Hotkey);
+        Assert.Equal("Ctrl+Alt+K", HotkeyParser.Parse(new Settings().Hotkey).ToString());
+    }
+
+    [Fact]
     public void NewSettings_EnableReasoningByDefault()
     {
         Assert.True(new Settings().EnableReasoning);

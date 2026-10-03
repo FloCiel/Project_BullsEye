@@ -25,7 +25,7 @@
 | 팝업 동작 | 결과 **스트리밍 표시** → 완료 시 클립보드 + 팝업 유지. Esc / 외부 클릭으로 닫힘 → 원래 창으로 포커스 복귀 |
 | 재생성 | **대화 이어가기**(원본+이전 지시+이전 결과+새 지시). 빈 지시 + Enter = 같은 지시 재생성. 요청 실패 후 새 지시는 실패한 지시를 **교체**. 팝업 닫으면 대화 초기화 |
 | 팝업 위치 | 캐럿 아래(`GetGUIThreadInfo`) → 실패 시 마우스 위치. 모니터 경계 보정 |
-| 단축키 | 기본 `Ctrl+Alt+Space`, 설정에서 변경. 등록 실패 시 트레이 알림 |
+| 단축키 | 기본 `Ctrl+Alt+K` (개발 PC에서 `Ctrl+Alt+Space`가 다른 프로그램에 선점되어 변경), 설정에서 변경. 등록 실패 시 트레이 알림 |
 | 히스토리 | 최근 지시문 N개만 USB(암호화 파일)에 저장, 팝업에서 `↑`로 불러오기. 코드 내용은 저장 안 함 |
 | 실행 흐름 | 매 실행 시 설정 창 → 닫으면 트레이 상주. 트레이 메뉴: `설정` / `일시정지` / `종료` |
 | 중복 실행 | 차단. 두 번째 실행은 기존 인스턴스의 설정 창을 띄움 |
@@ -83,7 +83,7 @@ SingleInstance (Mutex + pipe) ───┘              ModelCatalog (/models)
 ### 단축키 한 번의 흐름
 
 ```
-Ctrl+Alt+Space
+Ctrl+Alt+K
   → ForegroundWindowInfo: hwnd, 프로세스명, 창 제목 저장
   → 수식키(Ctrl/Alt/Shift/Win) 해제 대기 (최대 1s)
   → seq0 = GetClipboardSequenceNumber(); SendInput(Ctrl+C); seq 변화 대기 (최대 300ms)
