@@ -8,6 +8,17 @@ public abstract class BullsEyeException(string message, bool isRetryable = false
     public bool IsRetryable { get; } = isRetryable;
 }
 
+/// <summary>새 PIN이 정책(8자 이상, 영문+숫자)을 만족하지 않음.</summary>
+public sealed class WeakPinException(string message) : BullsEyeException(message);
+
+/// <summary>설정 파일 복호화 실패. AES-GCM은 틀린 PIN과 변조를 구분할 수 없어 둘을 합친다.</summary>
+public sealed class WrongPinException(Exception? inner = null)
+    : BullsEyeException("PIN이 틀렸거나 설정 파일이 손상되었습니다.", inner: inner);
+
+/// <summary>설정 파일이 BullsEye 형식이 아니거나 헤더가 깨짐. 초기화가 필요하다.</summary>
+public sealed class CorruptSettingsException(string detail, Exception? inner = null)
+    : BullsEyeException($"설정 파일이 손상되었습니다 ({detail}).", inner: inner);
+
 /// <summary>AI provider가 요청을 거절함. 하위 타입이 원인을 구분한다.</summary>
 public class ProviderException(string message, bool isRetryable = false) : BullsEyeException(message, isRetryable);
 
