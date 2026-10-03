@@ -19,6 +19,13 @@ public sealed class WrongPinException(Exception? inner = null)
 public sealed class CorruptSettingsException(string detail, Exception? inner = null)
     : BullsEyeException($"설정 파일이 손상되었습니다 ({detail}).", inner: inner);
 
+/// <summary>단축키 문자열을 해석할 수 없거나 전역 단축키로 쓰기에 부적절함.</summary>
+public sealed class InvalidHotkeyException(string message) : BullsEyeException(message);
+
+/// <summary>다른 프로그램이 같은 전역 단축키를 이미 쓰고 있음.</summary>
+public sealed class HotkeyUnavailableException(Hotkey hotkey)
+    : BullsEyeException($"{hotkey} 단축키를 다른 프로그램이 이미 사용 중입니다. 설정에서 바꿔주세요.");
+
 /// <summary>네트워크 연결 실패 (학교망 끊김, DNS, 연결 끊김). 사용자가 Enter로 재시도한다.</summary>
 public sealed class NetworkException(Exception inner)
     : BullsEyeException("네트워크 연결에 실패했습니다.", inner: inner);
