@@ -118,7 +118,7 @@ internal sealed class FakePopupHost : IPopupHost
 
     public bool IsOpen { get; private set; }
 
-    public event EventHandler? Closed;
+    public event EventHandler<PopupClosedEventArgs>? Closed;
 
     public void Open(PopupRequest request)
     {
@@ -128,9 +128,10 @@ internal sealed class FakePopupHost : IPopupHost
 
     public void Activate() => Activations++;
 
-    public void Close()
+    /// <param name="returnFocus">Esc 등 팝업이 활성일 때 닫히면 true, 다른 창을 클릭해 닫히면 false.</param>
+    public void Close(bool returnFocus = true)
     {
         IsOpen = false;
-        Closed?.Invoke(this, EventArgs.Empty);
+        Closed?.Invoke(this, new PopupClosedEventArgs(returnFocus));
     }
 }

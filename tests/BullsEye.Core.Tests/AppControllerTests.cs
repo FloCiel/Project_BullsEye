@@ -55,6 +55,17 @@ public class AppControllerTests
     }
 
     [Fact]
+    public async Task ClosingPopup_ByClickingAnotherWindow_DoesNotStealFocusBack()
+    {
+        var controller = Controller(new FakeSelection("area = "));
+        await controller.OnHotkeyAsync();
+
+        _popup.Close(returnFocus: false);
+
+        Assert.Empty(_windows.Restored);
+    }
+
+    [Fact]
     public async Task OnHotkey_WhilePopupOpen_ActivatesItInsteadOfCapturingAgain()
     {
         var selection = new FakeSelection("area = ");

@@ -8,13 +8,25 @@ public sealed record PopupRequest(
     string? Selection,
     CompletionSession Session);
 
+/// <param name="returnFocus">
+/// 팝업이 활성인 채로 닫힘 (Esc, 설정 열기) → 원래 창으로 돌려보낸다.
+/// 사용자가 다른 창을 클릭해 닫힘 → 그 창을 빼앗지 않는다.
+/// </param>
+public sealed class PopupClosedEventArgs(bool returnFocus) : EventArgs
+{
+    public bool ReturnFocus { get; } = returnFocus;
+}
+
 /// <summary>팝업 창. 한 번에 하나만 열린다.</summary>
 public interface IPopupHost
 {
     bool IsOpen { get; }
 
-    /// <summary>팝업이 닫혔을 때 (Esc, 바깥 클릭, 닫기).</summary>
-    event EventHandler? Closed;
+    /// <summary>
+    /// 팝업이 닫히기 시작할 때, 창이 아직 활성일 때 발생한다.
+    /// 이때 포커스를 넘겨야 Windows가 허용한다 (창이 숨겨진 뒤에는 다른 창이 먼저 활성화된다).
+    /// </summary>
+    event EventHandler<PopupClosedEventArgs>? Closed;
 
     void Open(PopupRequest request);
 
@@ -63,12 +75,12 @@ public sealed class AppController(
         var anchor = caret.Locate(window);
         var session = createSession(selectedText, language);
 
-        void OnClosed(object? sender, EventArgs e)
+        void OnClosed(object? sender, PopupClosedEventArgs e)
         {
             popup.Closed -= OnClosed;
             session.Cancel();
             // 선택 영역이 남아 있는 원래 창으로 돌아가야 바로 Ctrl+V 할 수 있다.
-            windows.Restore(window);
+            if (e.ReturnFocus) windows.Restore(window);
         }
 
         popup.Closed += OnClosed;
