@@ -14,17 +14,22 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly NotifyIcon _tray;
     private readonly ToolStripMenuItem _pauseItem;
     private readonly GlobalHotkey _hotkey = new();
+    private readonly GlobalHotkey _quickHotkey = new();
     private readonly ClipboardService _clipboard = new();
     private readonly ForegroundWindowProbe _windows = new();
     private readonly SelectionCapture _selection = new();
     private readonly CaretLocator _caret = new();
     private readonly System.Windows.Forms.Timer _idleTimer = new() { Interval = 30_000 };
+    private readonly Icon _idleIcon = AppIcon.Create();
+    private readonly StatusIndicator _indicator;
 
     private Settings _settings;
     private string _pin;
     private PromptHistory _history;
     private PopupHost _popup = null!;
     private AppController _controller = null!;
+    private QuickController _quick = null!;
+    private string _readyText = "BullsEye";
     private IdleTracker _idle = null!;
     private bool _paused;
     private bool _settingsOpen;
@@ -45,14 +50,18 @@ internal sealed class TrayApplicationContext : ApplicationContext
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("종료", null, (_, _) => Exit());
 
-        _tray = new NotifyIcon { Icon = AppIcon.Create(), Text = "BullsEye", ContextMenuStrip = menu, Visible = true };
+        _tray = new NotifyIcon { Icon = _idleIcon, Text = "BullsEye", ContextMenuStrip = menu, Visible = true };
         _tray.DoubleClick += (_, _) => OpenSettings();
+        _indicator = new StatusIndicator(_tray, _idleIcon, () => TrayText);
         _hotkey.Pressed += async (_, _) => await OnHotkeyAsync();
+        _quickHotkey.Pressed += async (_, _) => await OnQuickHotkeyAsync();
         _idleTimer.Tick += (_, _) => CheckIdle();
 
         // 정상 종료든 USB 제거든 오류든: 우리가 넣은 클립보드 내용과 트레이 아이콘을 남기지 않는다.
         Shutdown.Register(() => _clipboard.ClearIfOwned());
         Shutdown.Register(() => _hotkey.Dispose());
+        Shutdown.Register(() => _quickHotkey.Dispose());
+        Shutdown.Register(() => _indicator.Dispose());
         Shutdown.Register(() =>
         {
             _tray.Visible = false;
@@ -84,8 +93,15 @@ internal sealed class TrayApplicationContext : ApplicationContext
             LanguageDetector.Default,
             (selection, language) => new CompletionSession(provider, _clipboard, _history, options, selection, language),
             TimeSpan.FromMilliseconds(settings.SelectionCaptureTimeoutMs));
+        _quick = new QuickController(
+            _windows,
+            _selection,
+            _indicator,
+            LanguageDetector.Default,
+            (code, language, shape) => new CompletionSession(provider, _clipboard, _history, options, code, language, shape),
+            TimeSpan.FromMilliseconds(settings.SelectionCaptureTimeoutMs));
 
-        RegisterHotkey();
+        RegisterHotkeys();
     }
 
     /// <summary>BULLSEYE_MOCK=1이면 키 없이 가짜 응답으로 UI를 확인한다 (개발용).</summary>
@@ -94,28 +110,46 @@ internal sealed class TrayApplicationContext : ApplicationContext
             ? new MockProvider()
             : new OpenRouterProvider(_http, settings.ApiKey);
 
-    private void RegisterHotkey()
+    private void RegisterHotkeys()
     {
         var hotkey = HotkeyParser.Parse(_settings.Hotkey);
-        try
+        var quick = HotkeyParser.Parse(_settings.QuickHotkey);
+        var registered = new List<string>();
+        var failures = new List<string>();
+
+        foreach (var (target, key, label) in new[] { (_hotkey, hotkey, "팝업"), (_quickHotkey, quick, "간소화") })
         {
-            _hotkey.Register(hotkey);
-            _tray.Text = $"BullsEye — {hotkey}";
-            Notify($"{hotkey}로 사용하세요. 코드를 선택하고 누르면 됩니다.", ToolTipIcon.Info);
+            try
+            {
+                target.Register(key);
+                registered.Add($"{label} {key}");
+            }
+            catch (HotkeyUnavailableException ex)
+            {
+                failures.Add(ex.Message);
+            }
         }
-        catch (HotkeyUnavailableException ex)
+
+        _readyText = registered.Count > 0 ? $"BullsEye — {string.Join(" · ", registered)}" : "BullsEye — 단축키 없음";
+        _tray.Text = TrayText;
+        if (failures.Count > 0)
         {
-            _tray.Text = "BullsEye — 단축키 없음";
-            Notify(ex.Message, ToolTipIcon.Warning);
+            Notify(string.Join(Environment.NewLine, failures), ToolTipIcon.Warning);
+        }
+        else
+        {
+            Notify($"{hotkey}: 팝업으로 지시{Environment.NewLine}{quick}: 창 없이 (% >> 지시 주석과 함께 선택)", ToolTipIcon.Info);
         }
     }
+
+    private string TrayText => _paused ? "BullsEye — 일시정지" : _readyText;
 
     private static readonly TimeSpan IdleWarning = TimeSpan.FromMinutes(5);
 
     /// <summary>공용 PC에 꽂아둔 채 자리를 떠도 키가 살아 있지 않게, 오래 안 쓰면 종료한다.</summary>
     private void CheckIdle()
     {
-        if (_popup.IsOpen || _settingsOpen) _idle.Touch();
+        if (_popup.IsOpen || _quick.IsBusy || _settingsOpen) _idle.Touch();
 
         switch (_idle.Check())
         {
@@ -139,6 +173,21 @@ internal sealed class TrayApplicationContext : ApplicationContext
         catch (Exception ex)
         {
             Notify($"팝업을 열지 못했습니다: {ex.Message}", ToolTipIcon.Error);
+        }
+    }
+
+    private async Task OnQuickHotkeyAsync()
+    {
+        _idle.Touch();
+        if (_paused || _settingsOpen) return;
+        try
+        {
+            await _quick.OnHotkeyAsync();
+            await SaveHistoryAsync();
+        }
+        catch (Exception ex)
+        {
+            _indicator.Show(SessionStatus.Failed, $"실행하지 못했습니다: {ex.Message}");
         }
     }
 
@@ -166,7 +215,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         _paused = !_paused;
         _pauseItem.Checked = _paused;
-        _tray.Text = _paused ? "BullsEye — 일시정지" : $"BullsEye — {_settings.Hotkey}";
+        _tray.Text = TrayText;
     }
 
     /// <summary>팝업을 닫을 때마다 지시 히스토리를 USB 파일에 반영한다.</summary>

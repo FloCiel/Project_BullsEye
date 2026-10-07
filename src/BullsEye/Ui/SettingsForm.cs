@@ -40,6 +40,7 @@ internal sealed class SettingsForm : Form
     };
     private readonly Label _catalogStatus = new() { AutoSize = true };
     private readonly TextBox _hotkey = new() { AccessibleName = "단축키" };
+    private readonly TextBox _quickHotkey = new() { AccessibleName = "간소화 단축키" };
     private readonly CheckBox _reasoning = new() { Text = "추론 켜기 (느리지만 정확)", AutoSize = true };
     private readonly CheckBox _denyCollection = new() { Text = "프롬프트를 수집하는 provider 제외", AutoSize = true };
     private readonly NumericUpDown _idleMinutes = new() { Minimum = 5, Maximum = 600, Width = 80, AccessibleName = "유휴 종료 분" };
@@ -131,6 +132,7 @@ internal sealed class SettingsForm : Form
 
         Section("동작");
         Row("단축키", Stack(_hotkey, Hint("예: Ctrl+Alt+K, Ctrl+Shift+F12")));
+        Row("간소화 단축키", Stack(_quickHotkey, Hint("창 없이 실행. 지시를 '% >> 벡터화해줘'처럼 주석으로 적어 코드와 함께 선택하고 누르면, 화면 구석 점이 초록이 될 때 Ctrl+V. 진행 중에 다시 누르면 취소.")));
         Row("", Stack(_reasoning, _denyCollection));
         Row("유휴 종료(분)", _idleMinutes);
         Row("히스토리 개수", _historyCapacity);
@@ -214,6 +216,7 @@ internal sealed class SettingsForm : Form
         _favorites.Items.Clear();
         foreach (var model in _settings.FavoriteModels) _favorites.Items.Add(model);
         _hotkey.Text = _settings.Hotkey;
+        _quickHotkey.Text = _settings.QuickHotkey;
         _reasoning.Checked = _settings.EnableReasoning;
         _denyCollection.Checked = _settings.DenyDataCollection;
         _idleMinutes.Value = Math.Clamp(_settings.IdleTimeoutMinutes, (int)_idleMinutes.Minimum, (int)_idleMinutes.Maximum);
@@ -317,13 +320,21 @@ internal sealed class SettingsForm : Form
         }
 
         string hotkey;
+        string quickHotkey;
         try
         {
             hotkey = HotkeyParser.Parse(_hotkey.Text).ToString();
+            quickHotkey = HotkeyParser.Parse(_quickHotkey.Text).ToString();
         }
         catch (InvalidHotkeyException ex)
         {
             error = ex.Message;
+            return false;
+        }
+
+        if (hotkey == quickHotkey)
+        {
+            error = "단축키와 간소화 단축키는 서로 달라야 합니다.";
             return false;
         }
 
@@ -332,6 +343,7 @@ internal sealed class SettingsForm : Form
             ApiKey = apiKey,
             FavoriteModels = favorites,
             Hotkey = hotkey,
+            QuickHotkey = quickHotkey,
             EnableReasoning = _reasoning.Checked,
             DenyDataCollection = _denyCollection.Checked,
             IdleTimeoutMinutes = (int)_idleMinutes.Value,

@@ -87,6 +87,12 @@ internal static partial class NativeMethods
 
     public const int CS_DROPSHADOW = 0x00020000;
 
+    // 간소화 모드의 상태 점: 작업표시줄·Alt+Tab에 안 나오고, 포커스를 안 받고, 클릭이 통과한다.
+    public const int WS_EX_TOPMOST = 0x00000008;
+    public const int WS_EX_TRANSPARENT = 0x00000020;
+    public const int WS_EX_TOOLWINDOW = 0x00000080;
+    public const int WS_EX_NOACTIVATE = 0x08000000;
+
     [StructLayout(LayoutKind.Sequential)]
     public struct POINT
     {
