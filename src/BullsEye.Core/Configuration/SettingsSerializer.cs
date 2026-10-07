@@ -31,6 +31,7 @@ public static class SettingsSerializer
             ApiKey = settings.ApiKey ?? Defaults.ApiKey,
             FavoriteModels = settings.FavoriteModels ?? Defaults.FavoriteModels,
             Hotkey = settings.Hotkey ?? Defaults.Hotkey,
+            QuickHotkey = settings.QuickHotkey ?? Defaults.QuickHotkey,
             History = settings.History ?? Defaults.History,
         };
     }

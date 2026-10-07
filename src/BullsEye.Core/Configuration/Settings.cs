@@ -10,6 +10,9 @@ public sealed record Settings
 
     public string Hotkey { get; init; } = "Ctrl+Alt+K";
 
+    /// <summary>간소화 모드: 창 없이 선택 영역의 <c>&gt;&gt;</c> 지시 주석으로 바로 요청.</summary>
+    public string QuickHotkey { get; init; } = "Ctrl+Alt+J";
+
     public int IdleTimeoutMinutes { get; init; } = 60;
 
     public int HistoryCapacity { get; init; } = 20;

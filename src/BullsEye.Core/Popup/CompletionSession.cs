@@ -44,13 +44,14 @@ public sealed class CompletionSession
         PromptHistory history,
         SessionOptions options,
         string? selection,
-        string? language)
+        string? language,
+        SelectionShape? shape = null)
     {
         _provider = provider;
         _clipboard = clipboard;
         _history = history;
         _options = options;
-        _shape = string.IsNullOrEmpty(selection) ? SelectionShape.None : SelectionShape.From(selection);
+        _shape = shape ?? (string.IsNullOrEmpty(selection) ? SelectionShape.None : SelectionShape.From(selection));
         _conversation = Conversation.Start(selection, language);
     }
 

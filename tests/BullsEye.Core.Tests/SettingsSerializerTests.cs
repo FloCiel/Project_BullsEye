@@ -12,6 +12,7 @@ public class SettingsSerializerTests
             ApiKey = "sk-or-v1-secret",
             FavoriteModels = ["vendor/fast-model", "vendor/smart-model"],
             Hotkey = "Ctrl+Shift+K",
+            QuickHotkey = "Ctrl+Shift+J",
             IdleTimeoutMinutes = 90,
             HistoryCapacity = 5,
             History = ["주석 달아줘", "for문으로"],
@@ -34,6 +35,12 @@ public class SettingsSerializerTests
     }
 
     [Fact]
+    public void NewSettings_QuickHotkeyIsCtrlAltJ()
+    {
+        Assert.Equal("Ctrl+Alt+J", HotkeyParser.Parse(new Settings().QuickHotkey).ToString());
+    }
+
+    [Fact]
     public void NewSettings_EnableReasoningByDefault()
     {
         Assert.True(new Settings().EnableReasoning);
@@ -42,7 +49,7 @@ public class SettingsSerializerTests
     [Theory]
     [InlineData("{\"apiKey\":\"k\"}")]
     [InlineData("{\"apiKey\":\"k\",\"someFutureField\":{\"x\":1}}")]
-    [InlineData("{\"apiKey\":\"k\",\"favoriteModels\":null,\"history\":null,\"hotkey\":null}")]
+    [InlineData("{\"apiKey\":\"k\",\"favoriteModels\":null,\"history\":null,\"hotkey\":null,\"quickHotkey\":null}")]
     public void Deserialize_FillsDefaults_ForMissingOrNullFields(string json)
     {
         var restored = SettingsSerializer.Deserialize(Encoding.UTF8.GetBytes(json));

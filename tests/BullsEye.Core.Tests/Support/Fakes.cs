@@ -142,3 +142,12 @@ internal sealed class FakeClock(DateTime start) : IClock
 
     public void Advance(TimeSpan by) => UtcNow += by;
 }
+
+internal sealed class FakeIndicator : IStatusIndicator
+{
+    public List<(SessionStatus Status, string Message)> Shown { get; } = [];
+
+    public SessionStatus[] Statuses => Shown.Select(s => s.Status).ToArray();
+
+    public void Show(SessionStatus status, string message) => Shown.Add((status, message));
+}
