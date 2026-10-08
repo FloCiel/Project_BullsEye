@@ -173,6 +173,24 @@ public class OpenRouterProviderTests
         await Assert.ThrowsAsync<ResponseTimeoutException>(() => Collect(provider.StreamAsync(Request)));
     }
 
+    // 회귀: 추론을 글로 내보내지 않는 모델(예: openai/gpt-5.6-sol-pro)은 코드가 나올 때까지
+    // keep-alive 주석과 암호화된 reasoning_details만 보낸다. 오래 생각해도 서버가 살아 있으면 기다린다.
+    [Fact]
+    public async Task StreamAsync_HiddenReasoningWithKeepAlive_WaitsPastFirstEventTimeout()
+    {
+        const string keepAlive = ": OPENROUTER PROCESSING\n\n";
+        const string hiddenReasoning =
+            "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\",\"reasoning_details\":[{\"type\":\"reasoning.encrypted\",\"data\":\"x\"}]}}]}\n\n";
+        string[] chunks = [keepAlive, hiddenReasoning, keepAlive, keepAlive, hiddenReasoning, keepAlive, Delta("x"), Done];
+        var body = new ScriptedStream(chunks, gap: TimeSpan.FromMilliseconds(30));
+        var provider = new OpenRouterProvider(new HttpClient(new StubHttpHandler(StubHttpHandler.Streaming(body))), "k", ShortTimeouts);
+
+        // 전체 약 210ms > 첫 응답 제한 50ms, 하지만 30ms마다 무언가 온다.
+        var events = await Collect(provider.StreamAsync(Request));
+
+        Assert.Equal([new TextDelta("x"), new Completed()], events);
+    }
+
     [Fact]
     public async Task StreamAsync_SlowAfterFirstReasoning_DoesNotTimeOut()
     {

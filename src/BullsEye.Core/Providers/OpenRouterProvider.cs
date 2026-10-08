@@ -21,17 +21,20 @@ public sealed class OpenRouterProvider(HttpClient http, string apiKey, OpenRoute
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var reader = new StreamReader(stream, Encoding.UTF8);
 
-        // 첫 이벤트(추론 포함)까지만 시간 제한. keep-alive 주석은 이벤트가 아니므로 세지 않는다.
+        // 첫 이벤트(추론 포함)까지만 시간 제한. 단, 서버가 무엇이든 보내는 동안은 기다린다:
+        // 추론을 글로 내보내지 않는 모델은 keep-alive 주석과 암호화된 reasoning_details만 보내며 수십 초 생각한다.
         using var firstEventTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        firstEventTimeout.CancelAfter(_options.FirstEventTimeout);
         var receivedAny = false;
 
         var decoder = new ChatStreamDecoder();
         var buffer = new char[4096];
         int read;
-        while ((read = await ReadChunkAsync(reader, buffer,
-                   receivedAny ? cancellationToken : firstEventTimeout.Token, cancellationToken)) > 0)
+        while (true)
         {
+            if (!receivedAny) firstEventTimeout.CancelAfter(_options.FirstEventTimeout);
+            read = await ReadChunkAsync(reader, buffer, receivedAny ? cancellationToken : firstEventTimeout.Token, cancellationToken);
+            if (read == 0) break;
+
             foreach (var streamEvent in decoder.Feed(new string(buffer, 0, read)))
             {
                 receivedAny = true;

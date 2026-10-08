@@ -97,4 +97,41 @@ public class QuickControllerTests
         Assert.Contains("단축키를 다시 눌러", message);
         Assert.DoesNotContain("Enter", message);
     }
+
+    [Fact]
+    public async Task OnHotkey_InstructionAboveCommentedFunction_IsSentAsRequest()
+    {
+        _provider.Reply(new TextDelta("V = 1;"), new Completed());
+        var text = """
+            % >> 좀더 간소화해봐.
+
+            function V = triPrismVolume(a, b, c, L)
+            % triPrismVolume  삼각기둥의 부피를 반환한다.
+            %   a, b, c : 삼각형 밑면의 세 변의 길이
+            %   L       : 기둥의 높이(길이)
+            %
+            %   V = triPrismVolume(a, b, c, L)
+
+                if nargin < 4
+                    error('triPrismVolume: 입력값 4개(a, b, c, L)가 필요합니다.');
+                end
+                if any([a b c L] <= 0)
+                    error('triPrismVolume: 모든 입력값은 양수여야 합니다.');
+                end
+
+                s = (a + b + c) / 2;                    % 반둘레
+                baseArea = sqrt(s * (s-a) * (s-b) * (s-c));   % 헤론의 공식
+                if ~isreal(baseArea)
+                    error('triPrismVolume: 세 변이 삼각형을 이루지 못합니다.');
+                end
+
+                V = baseArea * L;
+            end
+            """.ReplaceLineEndings("\r\n");
+        var controller = Controller(new FakeSelection(text));
+
+        await controller.OnHotkeyAsync();
+
+        Assert.Equal([SessionStatus.Thinking, SessionStatus.Writing, SessionStatus.Done], _indicator.Statuses);
+    }
 }

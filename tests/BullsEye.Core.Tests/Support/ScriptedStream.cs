@@ -3,7 +3,8 @@ using System.Text;
 namespace BullsEye.Core.Tests.Support;
 
 /// <summary>정해진 청크를 내보낸 뒤, 끝나거나(EOF) 예외를 던지거나 취소될 때까지 멈춘다.</summary>
-internal sealed class ScriptedStream(string[] chunks, Exception? thenThrow = null, bool thenHang = false) : Stream
+/// <param name="gap">두 번째 청크부터 각 청크 앞에서 기다리는 시간 (서버가 띄엄띄엄 보내는 상황).</param>
+internal sealed class ScriptedStream(string[] chunks, Exception? thenThrow = null, bool thenHang = false, TimeSpan gap = default) : Stream
 {
     private int _next;
 
@@ -11,6 +12,7 @@ internal sealed class ScriptedStream(string[] chunks, Exception? thenThrow = nul
     {
         if (_next < chunks.Length)
         {
+            if (_next > 0 && gap > TimeSpan.Zero) await Task.Delay(gap, cancellationToken);
             var bytes = Encoding.UTF8.GetBytes(chunks[_next++]);
             bytes.CopyTo(buffer);
             return bytes.Length;
