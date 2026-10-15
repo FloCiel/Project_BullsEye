@@ -17,7 +17,7 @@ public class SettingsSerializerTests
             HistoryCapacity = 5,
             History = ["주석 달아줘", "for문으로"],
             DenyDataCollection = false,
-            EnableReasoning = false,
+            ReasoningEffort = ReasoningEffort.High,
             SelectionCaptureTimeoutMs = 800,
         };
 
@@ -41,9 +41,29 @@ public class SettingsSerializerTests
     }
 
     [Fact]
-    public void NewSettings_EnableReasoningByDefault()
+    public void NewSettings_ReasoningEffortIsMediumByDefault()
     {
-        Assert.True(new Settings().EnableReasoning);
+        Assert.Equal(ReasoningEffort.Medium, new Settings().ReasoningEffort);
+    }
+
+    [Fact]
+    public void Serialize_WritesReasoningEffortAsString()
+    {
+        var json = Encoding.UTF8.GetString(SettingsSerializer.Serialize(new Settings { ReasoningEffort = ReasoningEffort.Low }));
+
+        Assert.Contains("\"reasoningEffort\":\"Low\"", json);
+    }
+
+    // 예전 파일은 enableReasoning(bool)만 있다: 꺼 두었으면 Off, 켜 두었으면 기본값(Medium = 예전 동작).
+    [Theory]
+    [InlineData("{\"apiKey\":\"k\",\"enableReasoning\":false}", ReasoningEffort.Off)]
+    [InlineData("{\"apiKey\":\"k\",\"enableReasoning\":true}", ReasoningEffort.Medium)]
+    [InlineData("{\"apiKey\":\"k\",\"enableReasoning\":false,\"reasoningEffort\":\"High\"}", ReasoningEffort.High)]
+    public void Deserialize_MigratesLegacyEnableReasoning(string json, ReasoningEffort expected)
+    {
+        var restored = SettingsSerializer.Deserialize(Encoding.UTF8.GetBytes(json));
+
+        Assert.Equal(expected, restored.ReasoningEffort);
     }
 
     [Theory]

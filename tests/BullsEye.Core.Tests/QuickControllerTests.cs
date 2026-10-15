@@ -5,7 +5,7 @@ namespace BullsEye.Core.Tests;
 public class QuickControllerTests
 {
     private static readonly ForegroundWindow Matlab = new(0x1234, "MATLAB.exe", "Editor - C:\\work\\rect.m");
-    private static readonly SessionOptions Options = new(["vendor/fast"], true, true);
+    private static readonly SessionOptions Options = new(["vendor/fast"], true, ReasoningEffort.Medium);
 
     private readonly FakeProvider _provider = new();
     private readonly FakeClipboard _clipboard = new();

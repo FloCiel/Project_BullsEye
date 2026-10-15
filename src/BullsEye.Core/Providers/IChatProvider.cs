@@ -13,4 +13,4 @@ public sealed record ChatRequest(
     string Model,
     IReadOnlyList<ChatMessage> Messages,
     bool DenyDataCollection,
-    bool EnableReasoning);
+    ReasoningEffort ReasoningEffort);

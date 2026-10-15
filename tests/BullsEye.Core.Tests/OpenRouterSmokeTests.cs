@@ -21,7 +21,7 @@ public class OpenRouterSmokeTests
         var provider = new OpenRouterProvider(new HttpClient { Timeout = Timeout.InfiniteTimeSpan }, apiKey!);
 
         var events = new List<StreamEvent>();
-        await foreach (var e in provider.StreamAsync(new ChatRequest(Model, conversation.BuildMessages(), true, true)))
+        await foreach (var e in provider.StreamAsync(new ChatRequest(Model, conversation.BuildMessages(), true, ReasoningEffort.Medium)))
         {
             events.Add(e);
         }

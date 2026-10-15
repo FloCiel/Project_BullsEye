@@ -16,7 +16,7 @@ public sealed class MockProvider(TimeSpan chunkDelay) : IChatProvider
         ChatRequest request,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        if (request.EnableReasoning)
+        if (request.ReasoningEffort != ReasoningEffort.Off)
         {
             await Task.Delay(chunkDelay, cancellationToken);
             yield return new ReasoningDelta("Mock reasoning...");

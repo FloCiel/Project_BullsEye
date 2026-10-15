@@ -82,7 +82,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _idle = new IdleTracker(timeout, warnBefore, new SystemClock());
 
         var provider = CreateProvider(settings);
-        var options = new SessionOptions(settings.FavoriteModels, settings.DenyDataCollection, settings.EnableReasoning);
+        var options = new SessionOptions(settings.FavoriteModels, settings.DenyDataCollection, settings.ReasoningEffort);
         _popup = new PopupHost(_history, OpenSettings);
         _popup.Closed += async (_, _) => await SaveHistoryAsync();
         _controller = new AppController(

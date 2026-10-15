@@ -125,7 +125,9 @@ public sealed class OpenRouterProvider(HttpClient http, string apiKey, OpenRoute
             ["model"] = request.Model,
             ["stream"] = true,
             ["messages"] = messages,
-            ["reasoning"] = new JsonObject { ["enabled"] = request.EnableReasoning },
+            ["reasoning"] = request.ReasoningEffort == ReasoningEffort.Off
+                ? new JsonObject { ["enabled"] = false }
+                : new JsonObject { ["effort"] = request.ReasoningEffort.ToString().ToLowerInvariant() },
         };
 
         if (request.DenyDataCollection)

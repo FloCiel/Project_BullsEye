@@ -16,19 +16,19 @@ public class MockProviderTests
     }
 
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task StreamAsync_StreamsDeterministicCodeThenCompletes(bool enableReasoning)
+    [InlineData(ReasoningEffort.Medium)]
+    [InlineData(ReasoningEffort.Off)]
+    public async Task StreamAsync_StreamsDeterministicCodeThenCompletes(ReasoningEffort effort)
     {
         var provider = new MockProvider(chunkDelay: TimeSpan.Zero);
-        var request = new ChatRequest("mock/model", Messages, DenyDataCollection: true, enableReasoning);
+        var request = new ChatRequest("mock/model", Messages, DenyDataCollection: true, effort);
 
         var first = await Collect(provider.StreamAsync(request));
         var second = await Collect(provider.StreamAsync(request));
 
         Assert.Equal(first, second);
         Assert.IsType<Completed>(first[^1]);
-        Assert.Equal(enableReasoning, first.Any(e => e is ReasoningDelta));
+        Assert.Equal(effort != ReasoningEffort.Off, first.Any(e => e is ReasoningDelta));
         var text = string.Concat(first.OfType<TextDelta>().Select(d => d.Text));
         Assert.Contains("mock/model", text);
         Assert.True(first.OfType<TextDelta>().Count() > 1, "should stream in several chunks");

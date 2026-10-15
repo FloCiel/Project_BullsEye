@@ -41,7 +41,15 @@ internal sealed class SettingsForm : Form
     private readonly Label _catalogStatus = new() { AutoSize = true };
     private readonly TextBox _hotkey = new() { AccessibleName = "단축키" };
     private readonly TextBox _quickHotkey = new() { AccessibleName = "간소화 단축키" };
-    private readonly CheckBox _reasoning = new() { Text = "추론 켜기 (느리지만 정확)", AutoSize = true };
+    private static readonly (ReasoningEffort Effort, string Label)[] ReasoningChoices =
+    [
+        (ReasoningEffort.Off, "끔 (가장 빠름)"),
+        (ReasoningEffort.Low, "Low"),
+        (ReasoningEffort.Medium, "Medium (기본)"),
+        (ReasoningEffort.High, "High (느리지만 정확)"),
+    ];
+
+    private readonly ComboBox _reasoning = new() { DropDownStyle = ComboBoxStyle.DropDownList, AccessibleName = "추론 등급" };
     private readonly CheckBox _denyCollection = new() { Text = "프롬프트를 수집하는 provider 제외", AutoSize = true };
     private readonly NumericUpDown _idleMinutes = new() { Minimum = 5, Maximum = 600, Width = 80, AccessibleName = "유휴 종료 분" };
     private readonly NumericUpDown _historyCapacity = new() { Minimum = 0, Maximum = 100, Width = 80, AccessibleName = "히스토리 개수" };
@@ -133,7 +141,9 @@ internal sealed class SettingsForm : Form
         Section("동작");
         Row("단축키", Stack(_hotkey, Hint("예: Ctrl+Alt+K, Ctrl+Shift+F12")));
         Row("간소화 단축키", Stack(_quickHotkey, Hint("창 없이 실행. 지시를 '% >> 벡터화해줘'처럼 주석으로 적어 코드와 함께 선택하고 누르면, 화면 구석 점이 초록이 될 때 Ctrl+V. 진행 중에 다시 누르면 취소.")));
-        Row("", Stack(_reasoning, _denyCollection));
+        _reasoning.Items.AddRange(ReasoningChoices.Select(c => (object)c.Label).ToArray());
+        Row("추론 등급", Stack(_reasoning, Hint("모델이 답하기 전에 생각하는 정도. 추론을 끌 수 없는 모델은 끔이어도 생각합니다.")));
+        Row("", _denyCollection);
         Row("유휴 종료(분)", _idleMinutes);
         Row("히스토리 개수", _historyCapacity);
 
@@ -217,7 +227,7 @@ internal sealed class SettingsForm : Form
         foreach (var model in _settings.FavoriteModels) _favorites.Items.Add(model);
         _hotkey.Text = _settings.Hotkey;
         _quickHotkey.Text = _settings.QuickHotkey;
-        _reasoning.Checked = _settings.EnableReasoning;
+        _reasoning.SelectedIndex = Math.Max(0, Array.FindIndex(ReasoningChoices, c => c.Effort == _settings.ReasoningEffort));
         _denyCollection.Checked = _settings.DenyDataCollection;
         _idleMinutes.Value = Math.Clamp(_settings.IdleTimeoutMinutes, (int)_idleMinutes.Minimum, (int)_idleMinutes.Maximum);
         _historyCapacity.Value = Math.Clamp(_settings.HistoryCapacity, (int)_historyCapacity.Minimum, (int)_historyCapacity.Maximum);
@@ -344,7 +354,7 @@ internal sealed class SettingsForm : Form
             FavoriteModels = favorites,
             Hotkey = hotkey,
             QuickHotkey = quickHotkey,
-            EnableReasoning = _reasoning.Checked,
+            ReasoningEffort = ReasoningChoices[Math.Max(0, _reasoning.SelectedIndex)].Effort,
             DenyDataCollection = _denyCollection.Checked,
             IdleTimeoutMinutes = (int)_idleMinutes.Value,
             HistoryCapacity = (int)_historyCapacity.Value,

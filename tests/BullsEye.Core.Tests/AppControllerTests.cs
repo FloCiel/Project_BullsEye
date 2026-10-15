@@ -6,7 +6,7 @@ public class AppControllerTests
 {
     private static readonly ForegroundWindow Matlab = new(0x1234, "MATLAB.exe", "Editor - C:\\work\\rect.m");
     private static readonly PopupAnchor Anchor = new(new ScreenPoint(300, 400), FromCaret: false);
-    private static readonly SessionOptions Options = new(["vendor/fast"], true, true);
+    private static readonly SessionOptions Options = new(["vendor/fast"], true, ReasoningEffort.Medium);
 
     private readonly FakeProvider _provider = new();
     private readonly FakePopupHost _popup = new();

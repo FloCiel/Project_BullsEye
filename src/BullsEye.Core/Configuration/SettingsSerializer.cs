@@ -14,9 +14,11 @@ public static class SettingsSerializer
     public static Settings Deserialize(byte[] json)
     {
         Settings? settings;
+        bool legacyReasoningOff;
         try
         {
             settings = JsonSerializer.Deserialize<Settings>(json, Options);
+            legacyReasoningOff = IsLegacyReasoningOff(json);
         }
         catch (JsonException ex)
         {
@@ -33,6 +35,18 @@ public static class SettingsSerializer
             Hotkey = settings.Hotkey ?? Defaults.Hotkey,
             QuickHotkey = settings.QuickHotkey ?? Defaults.QuickHotkey,
             History = settings.History ?? Defaults.History,
+            ReasoningEffort = legacyReasoningOff ? ReasoningEffort.Off : settings.ReasoningEffort,
         };
+    }
+
+    // 예전 파일은 reasoningEffort 대신 enableReasoning(bool)을 저장했다. 꺼 두었던 사용자만 Off로 옮긴다.
+    private static bool IsLegacyReasoningOff(byte[] json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        return root.ValueKind == JsonValueKind.Object
+            && !root.TryGetProperty("reasoningEffort", out _)
+            && root.TryGetProperty("enableReasoning", out var legacy)
+            && legacy.ValueKind == JsonValueKind.False;
     }
 }

@@ -24,14 +24,15 @@ public class OpenRouterProviderTests
     }
 
     [Theory]
-    [InlineData(true, true)]
-    [InlineData(false, false)]
-    public async Task StreamAsync_SendsOpenRouterChatRequest(bool denyDataCollection, bool enableReasoning)
+    [InlineData(true, ReasoningEffort.High, "{\"effort\":\"high\"}")]
+    [InlineData(true, ReasoningEffort.Low, "{\"effort\":\"low\"}")]
+    [InlineData(false, ReasoningEffort.Off, "{\"enabled\":false}")]
+    public async Task StreamAsync_SendsOpenRouterChatRequest(bool denyDataCollection, ReasoningEffort effort, string expectedReasoning)
     {
         var handler = new StubHttpHandler(StubHttpHandler.Sse(Done));
         var provider = new OpenRouterProvider(new HttpClient(handler), "sk-or-test");
 
-        await Collect(provider.StreamAsync(new ChatRequest("deepseek/deepseek-v4.1-flash", Messages, denyDataCollection, enableReasoning)));
+        await Collect(provider.StreamAsync(new ChatRequest("deepseek/deepseek-v4.1-flash", Messages, denyDataCollection, effort)));
 
         var (request, body) = Assert.Single(handler.Requests);
         Assert.Equal(HttpMethod.Post, request.Method);
@@ -42,7 +43,7 @@ public class OpenRouterProviderTests
         Assert.Equal("deepseek/deepseek-v4.1-flash", json.GetProperty("model").GetString());
         Assert.True(json.GetProperty("stream").GetBoolean());
         Assert.False(json.TryGetProperty("max_tokens", out _));
-        Assert.Equal(enableReasoning, json.GetProperty("reasoning").GetProperty("enabled").GetBoolean());
+        Assert.Equal(expectedReasoning, json.GetProperty("reasoning").GetRawText());
         Assert.Equal(denyDataCollection, json.TryGetProperty("provider", out var p)
             && p.GetProperty("data_collection").GetString() == "deny");
 
@@ -52,7 +53,7 @@ public class OpenRouterProviderTests
         Assert.Equal("user", messages[1].GetProperty("role").GetString());
     }
 
-    private static ChatRequest Request => new("m", Messages, DenyDataCollection: true, EnableReasoning: true);
+    private static ChatRequest Request => new("m", Messages, DenyDataCollection: true, ReasoningEffort: ReasoningEffort.Medium);
 
     [Fact]
     public async Task StreamAsync_YieldsDecodedEvents()

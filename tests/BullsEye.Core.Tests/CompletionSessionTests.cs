@@ -7,7 +7,7 @@ public class CompletionSessionTests
     private static readonly SessionOptions Options = new(
         Models: ["vendor/fast", "vendor/smart"],
         DenyDataCollection: true,
-        EnableReasoning: true);
+        ReasoningEffort: ReasoningEffort.High);
 
     private readonly FakeProvider _provider = new();
     private readonly FakeClipboard _clipboard = new();
@@ -36,7 +36,7 @@ public class CompletionSessionTests
         var request = Assert.Single(_provider.Requests);
         Assert.Equal("vendor/fast", request.Model);
         Assert.True(request.DenyDataCollection);
-        Assert.True(request.EnableReasoning);
+        Assert.Equal(ReasoningEffort.High, request.ReasoningEffort);
         Assert.Contains("사각형 넓이로 완성", request.Messages[^1].Content);
     }
 

@@ -20,7 +20,7 @@ public enum SessionStatus
     Cancelled,
 }
 
-public sealed record SessionOptions(IReadOnlyList<string> Models, bool DenyDataCollection, bool EnableReasoning);
+public sealed record SessionOptions(IReadOnlyList<string> Models, bool DenyDataCollection, ReasoningEffort ReasoningEffort);
 
 /// <summary>
 /// 팝업 하나의 수명. 지시 → 스트리밍 → 정리 → 클립보드 → 히스토리.
@@ -89,7 +89,7 @@ public sealed class CompletionSession
         _hasAsked = true;
         _history.Add(instruction);
 
-        var request = new ChatRequest(Model, _conversation.BuildMessages(), _options.DenyDataCollection, _options.EnableReasoning);
+        var request = new ChatRequest(Model, _conversation.BuildMessages(), _options.DenyDataCollection, _options.ReasoningEffort);
         var raw = new StringBuilder();
         using var running = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _running = running;
