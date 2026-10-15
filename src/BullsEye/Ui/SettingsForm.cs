@@ -64,6 +64,8 @@ internal sealed class SettingsForm : Form
         (ReasoningEffort.High, "High (느리지만 정확)"),
     ];
 
+    private const string AutoLanguage = "자동 감지 (창 제목 · 프로그램)";
+    private readonly ComboBox _language = new() { DropDownStyle = ComboBoxStyle.DropDownList, AccessibleName = "코드 언어" };
     private readonly ComboBox _reasoning = new() { DropDownStyle = ComboBoxStyle.DropDownList, AccessibleName = "추론 등급" };
     private readonly CheckBox _denyCollection = new() { Text = "프롬프트를 수집하는 provider 제외", AutoSize = true };
     private readonly NumericUpDown _idleMinutes = new() { Minimum = 5, Maximum = 600, Width = 80, AccessibleName = "유휴 종료 분" };
@@ -72,6 +74,11 @@ internal sealed class SettingsForm : Form
     private readonly Button _save;
     private readonly Button _reset;
     private readonly TableLayoutPanel _body;
+
+    // 세로로 길어지지 않게 두 열로 나눈다: 왼쪽 = 잠금 · 서비스 · 보안 · 모델, 오른쪽 = 동작.
+    private readonly TableLayoutPanel _left;
+    private readonly TableLayoutPanel _right;
+    private TableLayoutPanel _column;
     private (Control Caption, Control Field) _apiKeyRow;
     private (Control Caption, Control Field) _chatGptRow;
 
@@ -114,8 +121,13 @@ internal sealed class SettingsForm : Form
         _signOut = ThemedButton("로그아웃");
 
         _body = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
-        _body.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        _body.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, LogicalToDeviceUnits(380)));
+        _left = Column();
+        _right = Column();
+        _right.Margin = new Padding(LogicalToDeviceUnits(24), 0, 0, 0);
+        _body.Controls.Add(_left, 0, 0);
+        _body.Controls.Add(_right, 1, 0);
+        _body.RowCount = 1;
+        _column = _left;
         Controls.Add(_body);
 
         BuildLayout();
@@ -161,15 +173,15 @@ internal sealed class SettingsForm : Form
 
         Section("AI 서비스");
         _provider.Items.AddRange(ProviderChoices.Select(c => (object)c.Label).ToArray());
-        Row("서비스", Stack(_provider, Hint("ChatGPT 요금제로는 OpenAI 모델만 쓸 수 있습니다. 다른 회사 모델은 OpenRouter로.")));
+        Row("서비스", Stack(_provider, Hint("ChatGPT 요금제는 OpenAI 모델만. 다른 회사 모델은 OpenRouter로.")));
         _apiKeyRow = Row("OpenRouter 키", Stack(_apiKeyMask, _apiKey));
         _chatGptRow = Row("ChatGPT", Stack(
             _chatGptStatus,
             Inline(_signIn, _signOut, _manageUsage),
-            Hint("로그인하면 이 앱의 요청이 ChatGPT 요금제 사용량에서 차감됩니다. USB를 잃어버리면 ChatGPT 설정의 연결된 앱에서 BullsEye를 지우세요.")));
+            Hint("요금제 사용량에서 차감. USB를 잃어버리면 ChatGPT 설정 → 연결된 앱에서 BullsEye 삭제.")));
 
         Section("보안");
-        Row("PIN 설정", Stack(_newPin, _newPinConfirm, Hint("영문과 숫자를 섞어 8자 이상. 잊으면 초기화해야 합니다.")));
+        Row("PIN 설정", Stack(_newPin, _newPinConfirm, Hint("영문+숫자 8자 이상. 잊으면 초기화.")));
 
         Section("모델");
         var up = ThemedButton("↑");
@@ -180,20 +192,25 @@ internal sealed class SettingsForm : Form
         down.Click += (_, _) => MoveFavorite(+1);
         remove.Click += (_, _) => RemoveFavorite();
         add.Click += (_, _) => AddFavorite();
-        Row("즐겨찾기", Stack(_favorites, Inline(up, down, remove), Hint("첫 번째가 기본 모델. 팝업에서 Ctrl+Tab으로 바꿉니다.")));
+        Row("즐겨찾기", Stack(_favorites, Inline(up, down, remove), Hint("첫 번째가 기본. 팝업에서 Ctrl+Tab으로 바꿈.")));
         Row("모델 추가", Stack(Inline(_modelPicker, add), _catalogStatus));
 
+        _column = _right;
         Section("동작");
-        Row("단축키", Stack(_hotkey, Hint("예: Ctrl+Alt+K, Ctrl+Shift+F12")));
-        Row("간소화 단축키", Stack(_quickHotkey, Hint("창 없이 실행. 지시를 '% >> 벡터화해줘'처럼 주석으로 적어 코드와 함께 선택하고 누르면, 화면 구석 점이 초록이 될 때 Ctrl+V. 진행 중에 다시 누르면 취소.")));
-        Row("에이전트 단축키", Stack(_agentHotkey, Hint("MATLAB 편집기에서 누르면 그 파일의 폴더로 에이전트 창을 엽니다. 폴더의 여러 함수를 검토 · 생성 · 수정하고, 파일을 바꾸기 전에 매번 확인을 받습니다.")));
+        Row("팝업 단축키", Stack(_hotkey, Hint("팝업 창에 지시. 예: Ctrl+Alt+K")));
+        Row("간소화 단축키", Stack(_quickHotkey, Hint("'% >> 지시' 주석과 코드를 선택하고 누름 → 구석 점이 초록이면 Ctrl+V.")));
+        Row("에이전트 단축키", Stack(_agentHotkey, Hint("누르면 에이전트 창. '% >> 지시'를 선택하고 누르면 창 없이 적용 (원본 백업).")));
+        _language.Items.Add(AutoLanguage);
+        _language.Items.AddRange(LanguageDetector.Choices.Select(c => (object)c).ToArray());
+        Row("코드 언어", Stack(_language, Hint("다른 언어(C++ 등)로 답하면 MATLAB으로 고정.")));
         _reasoning.Items.AddRange(ReasoningChoices.Select(c => (object)c.Label).ToArray());
-        Row("추론 등급", Stack(_reasoning, Hint("모델이 답하기 전에 생각하는 정도. 추론을 끌 수 없는 모델은 끔이어도 생각합니다.")));
+        Row("추론 등급", Stack(_reasoning, Hint("답하기 전에 생각하는 정도. 끌 수 없는 모델도 있음.")));
         Row("", _denyCollection);
         Row("유휴 종료(분)", _idleMinutes);
         Row("히스토리 개수", _historyCapacity);
 
         _message.Tag = "lock";
+        _message.MaximumSize = new Size(LogicalToDeviceUnits(900), 0);
         _body.Controls.Add(_message, 0, _body.RowCount);
         _body.SetColumnSpan(_message, 2);
         _body.RowCount++;
@@ -246,7 +263,7 @@ internal sealed class SettingsForm : Form
 
         _pin.Enabled = locked;
         _unlock.Enabled = locked;
-        foreach (Control c in _body.Controls)
+        foreach (Control c in _left.Controls.Cast<Control>().Concat(_right.Controls.Cast<Control>()).Concat(_body.Controls.Cast<Control>().Where(c => c != _left && c != _right)))
         {
             // 잠긴 동안에는 PIN 줄만 보이고 나머지 설정은 숨긴다 (자동 크기 창이라 줄이 접힌다).
             if (IsLockSection(c)) c.Visible = locked;
@@ -288,6 +305,7 @@ internal sealed class SettingsForm : Form
         _hotkey.Text = _settings.Hotkey;
         _quickHotkey.Text = _settings.QuickHotkey;
         _agentHotkey.Text = _settings.AgentHotkey;
+        _language.SelectedIndex = Math.Max(0, _language.Items.IndexOf(_settings.CodeLanguage ?? AutoLanguage));
         _reasoning.SelectedIndex = Math.Max(0, Array.FindIndex(ReasoningChoices, c => c.Effort == _settings.ReasoningEffort));
         _denyCollection.Checked = _settings.DenyDataCollection;
         _idleMinutes.Value = Math.Clamp(_settings.IdleTimeoutMinutes, (int)_idleMinutes.Minimum, (int)_idleMinutes.Maximum);
@@ -428,6 +446,7 @@ internal sealed class SettingsForm : Form
             Hotkey = hotkey,
             QuickHotkey = quickHotkey,
             AgentHotkey = agentHotkey,
+            CodeLanguage = _language.SelectedItem is string language && language != AutoLanguage ? language : null,
             ReasoningEffort = ReasoningChoices[Math.Max(0, _reasoning.SelectedIndex)].Effort,
             DenyDataCollection = _denyCollection.Checked,
             IdleTimeoutMinutes = (int)_idleMinutes.Value,
@@ -713,9 +732,9 @@ internal sealed class SettingsForm : Form
             Margin = new Padding(0, LogicalToDeviceUnits(12), 0, LogicalToDeviceUnits(4)),
             Tag = title == "잠금" ? "lock-section" : null,
         };
-        _body.Controls.Add(label, 0, _body.RowCount);
-        _body.SetColumnSpan(label, 2);
-        _body.RowCount++;
+        _column.Controls.Add(label, 0, _column.RowCount);
+        _column.SetColumnSpan(label, 2);
+        _column.RowCount++;
     }
 
     private (Control Caption, Control Field) Row(string label, Control field)
@@ -729,17 +748,25 @@ internal sealed class SettingsForm : Form
             Tag = label == "PIN" ? "lock-section" : null,
         };
         field.Dock = DockStyle.Fill;
-        _body.Controls.Add(caption, 0, _body.RowCount);
-        _body.Controls.Add(field, 1, _body.RowCount);
-        _body.RowCount++;
+        _column.Controls.Add(caption, 0, _column.RowCount);
+        _column.Controls.Add(field, 1, _column.RowCount);
+        _column.RowCount++;
         return (caption, field);
+    }
+
+    private TableLayoutPanel Column()
+    {
+        var column = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Anchor = AnchorStyles.Top | AnchorStyles.Left, Margin = Padding.Empty };
+        column.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        column.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, LogicalToDeviceUnits(360)));
+        return column;
     }
 
     private Label Hint(string text) => new()
     {
         Text = text,
         AutoSize = true,
-        MaximumSize = new Size(LogicalToDeviceUnits(380), 0),
+        MaximumSize = new Size(LogicalToDeviceUnits(350), 0),
         Font = Theme.UiFont(9f),
         ForeColor = _theme.Muted,
         Tag = "hint",

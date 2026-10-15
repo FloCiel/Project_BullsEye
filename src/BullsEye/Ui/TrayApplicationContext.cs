@@ -34,6 +34,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private PopupHost _popup = null!;
     private AppController _controller = null!;
     private QuickController _quick = null!;
+    private QuickAgentController _quickAgent = null!;
     private IChatProvider _provider = null!;
     private AgentForm? _agent;
     private string _readyText = "BullsEye";
@@ -65,7 +66,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _indicator = new StatusIndicator(_tray, _idleIcon, () => TrayText);
         _hotkey.Pressed += async (_, _) => await OnHotkeyAsync();
         _quickHotkey.Pressed += async (_, _) => await OnQuickHotkeyAsync();
-        _agentHotkey.Pressed += (_, _) => OnAgentHotkey();
+        _agentHotkey.Pressed += async (_, _) => await OnAgentHotkeyAsync();
         _idleTimer.Tick += (_, _) => CheckIdle();
 
         // 정상 종료든 USB 제거든 오류든: 우리가 넣은 클립보드 내용과 트레이 아이콘을 남기지 않는다.
@@ -96,6 +97,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         var provider = CreateProvider(settings);
         _provider = provider;
         var options = new SessionOptions(settings.ActiveModels, settings.DenyDataCollection, settings.ReasoningEffort);
+        var languages = LanguageDetector.Default.WithFixed(settings.CodeLanguage);
         _popup = new PopupHost(_history, OpenSettings);
         _popup.Closed += async (_, _) => await SaveHistoryAsync();
         _controller = new AppController(
@@ -103,19 +105,38 @@ internal sealed class TrayApplicationContext : ApplicationContext
             _selection,
             _caret,
             _popup,
-            LanguageDetector.Default,
+            languages,
             (selection, language) => new CompletionSession(provider, _clipboard, _history, options, selection, language),
             TimeSpan.FromMilliseconds(settings.SelectionCaptureTimeoutMs));
         _quick = new QuickController(
             _windows,
             _selection,
             _indicator,
-            LanguageDetector.Default,
+            languages,
             (code, language, shape, keep) => new CompletionSession(provider, _clipboard, _history, options, code, language, shape, keep),
+            TimeSpan.FromMilliseconds(settings.SelectionCaptureTimeoutMs));
+
+        _quickAgent = new QuickAgentController(
+            _windows,
+            _selection,
+            _indicator,
+            _clipboard,
+            languages,
+            (folder, approver) =>
+            {
+                RememberAgentFolder(folder);
+                var workspace = new AgentWorkspace(folder);
+                var backup = new AgentBackup(workspace, DateTimeOffset.Now);
+                return (new AgentSession(provider, workspace, approver, AgentOptionsFor(settings), backup), backup);
+            },
+            () => _settings.AgentFolder,
             TimeSpan.FromMilliseconds(settings.SelectionCaptureTimeoutMs));
 
         RegisterHotkeys();
     }
+
+    private static AgentOptions AgentOptionsFor(Settings settings) => new(
+        settings.ActiveModels[0], settings.DenyDataCollection, settings.ReasoningEffort, Language: settings.CodeLanguage ?? "MATLAB");
 
     /// <summary>BULLSEYE_MOCK=1이면 키 없이 가짜 응답으로 UI를 확인한다 (개발용).</summary>
     private IChatProvider CreateProvider(Settings settings)
@@ -165,7 +186,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         else
         {
             Notify(
-                $"{hotkey}: 팝업으로 지시{Environment.NewLine}{quick}: 창 없이 (% >> 지시 주석과 함께 선택){Environment.NewLine}{agent}: 에이전트 (폴더의 여러 파일)",
+                $"{hotkey}: 팝업으로 지시{Environment.NewLine}{quick}: 창 없이 (% >> 지시 주석과 함께 선택){Environment.NewLine}{agent}: 에이전트 (% >> 주석을 선택하면 창 없이)",
                 ToolTipIcon.Info);
         }
     }
@@ -177,7 +198,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     /// <summary>공용 PC에 꽂아둔 채 자리를 떠도 키가 살아 있지 않게, 오래 안 쓰면 종료한다.</summary>
     private void CheckIdle()
     {
-        if (_popup.IsOpen || _quick.IsBusy || _settingsOpen || _agent is { IsDisposed: false, IsBusy: true }) _idle.Touch();
+        if (_popup.IsOpen || _quick.IsBusy || _quickAgent.IsBusy || _settingsOpen || _agent is { IsDisposed: false, IsBusy: true }) _idle.Touch();
 
         switch (_idle.Check())
         {
@@ -219,13 +240,21 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
     }
 
-    private void OnAgentHotkey()
+    /// <summary>선택 영역에 <c>% &gt;&gt; 지시</c>가 있으면 창 없이 실행, 없으면 에이전트 창.</summary>
+    private async Task OnAgentHotkeyAsync()
     {
         _idle.Touch();
         if (_paused || _settingsOpen) return;
+        if (_settings.ActiveModels.Count == 0)
+        {
+            Notify("즐겨찾기 모델이 없습니다. 설정에서 추가하세요.", ToolTipIcon.Warning);
+            return;
+        }
+
         try
         {
-            OpenAgent(_windows.Capture()?.Title);
+            var (handled, title) = await _quickAgent.OnHotkeyAsync();
+            if (!handled) OpenAgent(title);
         }
         catch (Exception ex)
         {
@@ -253,11 +282,16 @@ internal sealed class TrayApplicationContext : ApplicationContext
             return;
         }
 
+        if (_quickAgent.IsBusy)
+        {
+            Notify("창 없는 에이전트 작업이 진행 중입니다. 끝나거나 단축키로 취소한 뒤 여세요.", ToolTipIcon.Info);
+            return;
+        }
+
         var folder = Existing(MatlabFolder.FromWindowTitle(windowTitle)) ?? Existing(_settings.AgentFolder) ?? PickFolder(null);
         if (folder is null) return;
 
-        var options = new AgentOptions(models[0], _settings.DenyDataCollection, _settings.ReasoningEffort);
-        var form = new AgentForm(_provider, options, models, folder, OpenSettings, PickFolder);
+        var form = new AgentForm(_provider, AgentOptionsFor(_settings), models, folder, OpenSettings, PickFolder);
         form.FolderChanged += (_, picked) => RememberAgentFolder(picked);
         form.FormClosed += (_, _) =>
         {
