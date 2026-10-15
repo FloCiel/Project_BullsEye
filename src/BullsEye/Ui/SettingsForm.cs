@@ -198,8 +198,9 @@ internal sealed class SettingsForm : Form
         _unlock.Enabled = locked;
         foreach (Control c in _body.Controls)
         {
+            // 잠긴 동안에는 PIN 줄만 보이고 나머지 설정은 숨긴다 (자동 크기 창이라 줄이 접힌다).
             if (IsLockSection(c)) c.Visible = locked;
-            else if (!IsLockRow(c)) c.Enabled = !locked;
+            else if (!IsLockRow(c)) c.Visible = !locked;
         }
 
         _apiKeyMask.Visible = !firstRun;
@@ -210,6 +211,7 @@ internal sealed class SettingsForm : Form
         _newPinConfirm.PlaceholderText = firstRun ? "새 PIN 확인" : "";
         _save.Text = firstRun ? "저장하고 시작" : "시작";
         _save.Enabled = !locked;
+        _save.Visible = !locked;
         AcceptButton = locked ? null : _save;
 
         if (!locked) LoadFields();
@@ -245,6 +247,7 @@ internal sealed class SettingsForm : Form
             _mode = SettingsMode.Edit;
             ShowMessage("", isError: false);
             ApplyMode();
+            CenterToScreen(); // 숨겼던 줄이 펼쳐져 창이 커지므로 다시 가운데로
             _save.Focus();
         }
         catch (WrongPinException ex)
