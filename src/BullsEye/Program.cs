@@ -23,6 +23,22 @@ internal static class Program
             return;
         }
 
+#if DEBUG
+        // BullsEye.exe --agent-demo <폴더> : PIN·키 없이 가짜 provider로 에이전트 창만 띄운다 (개발용).
+        if (args.Length > 1 && args[0] == "--agent-demo")
+        {
+            var models = new[] { "mock/agent", "mock/other" };
+            Application.Run(new AgentForm(
+                new MockProvider(TimeSpan.FromMilliseconds(150)),
+                new AgentOptions(models[0], DenyDataCollection: true, ReasoningEffort.Medium),
+                models,
+                args[1],
+                () => { },
+                _ => null));
+            return;
+        }
+#endif
+
         // 이미 실행 중이면 그쪽 설정 창을 띄우게 하고 끝낸다.
         using var instance = SingleInstance.TryAcquire();
         if (instance is null) return;

@@ -19,6 +19,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly ToolStripMenuItem _pauseItem;
     private readonly GlobalHotkey _hotkey = new();
     private readonly GlobalHotkey _quickHotkey = new();
+    private readonly GlobalHotkey _agentHotkey = new();
     private readonly ClipboardService _clipboard = new();
     private readonly ForegroundWindowProbe _windows = new();
     private readonly SelectionCapture _selection = new();
@@ -33,6 +34,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private PopupHost _popup = null!;
     private AppController _controller = null!;
     private QuickController _quick = null!;
+    private IChatProvider _provider = null!;
+    private AgentForm? _agent;
     private string _readyText = "BullsEye";
     private IdleTracker _idle = null!;
     private bool _paused;
@@ -51,6 +54,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _pauseItem = new ToolStripMenuItem("일시정지", null, (_, _) => TogglePause());
         var menu = new ContextMenuStrip();
+        menu.Items.Add("에이전트…", null, (_, _) => OpenAgent(windowTitle: null));
         menu.Items.Add("설정…", null, (_, _) => OpenSettings());
         menu.Items.Add(_pauseItem);
         menu.Items.Add(new ToolStripSeparator());
@@ -61,12 +65,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _indicator = new StatusIndicator(_tray, _idleIcon, () => TrayText);
         _hotkey.Pressed += async (_, _) => await OnHotkeyAsync();
         _quickHotkey.Pressed += async (_, _) => await OnQuickHotkeyAsync();
+        _agentHotkey.Pressed += (_, _) => OnAgentHotkey();
         _idleTimer.Tick += (_, _) => CheckIdle();
 
         // 정상 종료든 USB 제거든 오류든: 우리가 넣은 클립보드 내용과 트레이 아이콘을 남기지 않는다.
         Shutdown.Register(() => _clipboard.ClearIfOwned());
         Shutdown.Register(() => _hotkey.Dispose());
         Shutdown.Register(() => _quickHotkey.Dispose());
+        Shutdown.Register(() => _agentHotkey.Dispose());
         Shutdown.Register(() => _indicator.Dispose());
         Shutdown.Register(() =>
         {
@@ -88,6 +94,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _idle = new IdleTracker(timeout, warnBefore, new SystemClock());
 
         var provider = CreateProvider(settings);
+        _provider = provider;
         var options = new SessionOptions(settings.ActiveModels, settings.DenyDataCollection, settings.ReasoningEffort);
         _popup = new PopupHost(_history, OpenSettings);
         _popup.Closed += async (_, _) => await SaveHistoryAsync();
@@ -132,10 +139,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         var hotkey = HotkeyParser.Parse(_settings.Hotkey);
         var quick = HotkeyParser.Parse(_settings.QuickHotkey);
+        var agent = HotkeyParser.Parse(_settings.AgentHotkey);
         var registered = new List<string>();
         var failures = new List<string>();
 
-        foreach (var (target, key, label) in new[] { (_hotkey, hotkey, "팝업"), (_quickHotkey, quick, "간소화") })
+        foreach (var (target, key, label) in new[] { (_hotkey, hotkey, "팝업"), (_quickHotkey, quick, "간소화"), (_agentHotkey, agent, "에이전트") })
         {
             try
             {
@@ -156,7 +164,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
         else
         {
-            Notify($"{hotkey}: 팝업으로 지시{Environment.NewLine}{quick}: 창 없이 (% >> 지시 주석과 함께 선택)", ToolTipIcon.Info);
+            Notify(
+                $"{hotkey}: 팝업으로 지시{Environment.NewLine}{quick}: 창 없이 (% >> 지시 주석과 함께 선택){Environment.NewLine}{agent}: 에이전트 (폴더의 여러 파일)",
+                ToolTipIcon.Info);
         }
     }
 
@@ -167,7 +177,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     /// <summary>공용 PC에 꽂아둔 채 자리를 떠도 키가 살아 있지 않게, 오래 안 쓰면 종료한다.</summary>
     private void CheckIdle()
     {
-        if (_popup.IsOpen || _quick.IsBusy || _settingsOpen) _idle.Touch();
+        if (_popup.IsOpen || _quick.IsBusy || _settingsOpen || _agent is { IsDisposed: false, IsBusy: true }) _idle.Touch();
 
         switch (_idle.Check())
         {
@@ -207,6 +217,76 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             _indicator.Show(SessionStatus.Failed, $"실행하지 못했습니다: {ex.Message}");
         }
+    }
+
+    private void OnAgentHotkey()
+    {
+        _idle.Touch();
+        if (_paused || _settingsOpen) return;
+        try
+        {
+            OpenAgent(_windows.Capture()?.Title);
+        }
+        catch (Exception ex)
+        {
+            Notify($"에이전트를 열지 못했습니다: {ex.Message}", ToolTipIcon.Error);
+        }
+    }
+
+    /// <summary>
+    /// 에이전트 창을 연다 (이미 열려 있으면 앞으로). 폴더는 단축키를 누른 MATLAB 창 제목 →
+    /// 지난번 폴더 → 폴더 선택 순서로 정한다.
+    /// </summary>
+    private void OpenAgent(string? windowTitle)
+    {
+        if (_agent is { IsDisposed: false })
+        {
+            _agent.FocusInput();
+            _agent.WarnUnsaved(MatlabFolder.HasUnsavedMark(windowTitle));
+            return;
+        }
+
+        var models = _settings.ActiveModels;
+        if (models.Count == 0)
+        {
+            Notify("즐겨찾기 모델이 없습니다. 설정에서 추가하세요.", ToolTipIcon.Warning);
+            return;
+        }
+
+        var folder = Existing(MatlabFolder.FromWindowTitle(windowTitle)) ?? Existing(_settings.AgentFolder) ?? PickFolder(null);
+        if (folder is null) return;
+
+        var options = new AgentOptions(models[0], _settings.DenyDataCollection, _settings.ReasoningEffort);
+        var form = new AgentForm(_provider, options, models, folder, OpenSettings, PickFolder);
+        form.FolderChanged += (_, picked) => RememberAgentFolder(picked);
+        form.FormClosed += (_, _) =>
+        {
+            if (_agent == form) _agent = null;
+        };
+        _agent = form;
+        RememberAgentFolder(form.Folder);
+        form.Show();
+        form.WarnUnsaved(MatlabFolder.HasUnsavedMark(windowTitle));
+    }
+
+    private static string? Existing(string? folder) => folder is not null && Directory.Exists(folder) ? folder : null;
+
+    private string? PickFolder(string? start)
+    {
+        using var dialog = new FolderBrowserDialog
+        {
+            Description = "에이전트가 작업할 폴더 (MATLAB 함수 파일이 있는 곳)",
+            UseDescriptionForTitle = true,
+            InitialDirectory = start ?? Existing(_settings.AgentFolder) ?? "",
+        };
+        return dialog.ShowDialog(_agent) == DialogResult.OK ? dialog.SelectedPath : null;
+    }
+
+    private void RememberAgentFolder(string folder)
+    {
+        if (string.Equals(folder, _settings.AgentFolder, StringComparison.OrdinalIgnoreCase)) return;
+        _settings = _settings with { AgentFolder = folder };
+        _ = SaveSettingsAsync();
     }
 
     /// <summary>트레이 메뉴, 더블클릭, 두 번째 실행에서 연다.</summary>

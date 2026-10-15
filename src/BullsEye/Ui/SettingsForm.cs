@@ -55,6 +55,7 @@ internal sealed class SettingsForm : Form
     private readonly Label _catalogStatus = new() { AutoSize = true };
     private readonly TextBox _hotkey = new() { AccessibleName = "단축키" };
     private readonly TextBox _quickHotkey = new() { AccessibleName = "간소화 단축키" };
+    private readonly TextBox _agentHotkey = new() { AccessibleName = "에이전트 단축키" };
     private static readonly (ReasoningEffort Effort, string Label)[] ReasoningChoices =
     [
         (ReasoningEffort.Off, "끔 (가장 빠름)"),
@@ -185,6 +186,7 @@ internal sealed class SettingsForm : Form
         Section("동작");
         Row("단축키", Stack(_hotkey, Hint("예: Ctrl+Alt+K, Ctrl+Shift+F12")));
         Row("간소화 단축키", Stack(_quickHotkey, Hint("창 없이 실행. 지시를 '% >> 벡터화해줘'처럼 주석으로 적어 코드와 함께 선택하고 누르면, 화면 구석 점이 초록이 될 때 Ctrl+V. 진행 중에 다시 누르면 취소.")));
+        Row("에이전트 단축키", Stack(_agentHotkey, Hint("MATLAB 편집기에서 누르면 그 파일의 폴더로 에이전트 창을 엽니다. 폴더의 여러 함수를 검토 · 생성 · 수정하고, 파일을 바꾸기 전에 매번 확인을 받습니다.")));
         _reasoning.Items.AddRange(ReasoningChoices.Select(c => (object)c.Label).ToArray());
         Row("추론 등급", Stack(_reasoning, Hint("모델이 답하기 전에 생각하는 정도. 추론을 끌 수 없는 모델은 끔이어도 생각합니다.")));
         Row("", _denyCollection);
@@ -285,6 +287,7 @@ internal sealed class SettingsForm : Form
         UpdateChatGptStatus();
         _hotkey.Text = _settings.Hotkey;
         _quickHotkey.Text = _settings.QuickHotkey;
+        _agentHotkey.Text = _settings.AgentHotkey;
         _reasoning.SelectedIndex = Math.Max(0, Array.FindIndex(ReasoningChoices, c => c.Effort == _settings.ReasoningEffort));
         _denyCollection.Checked = _settings.DenyDataCollection;
         _idleMinutes.Value = Math.Clamp(_settings.IdleTimeoutMinutes, (int)_idleMinutes.Minimum, (int)_idleMinutes.Maximum);
@@ -397,10 +400,12 @@ internal sealed class SettingsForm : Form
 
         string hotkey;
         string quickHotkey;
+        string agentHotkey;
         try
         {
             hotkey = HotkeyParser.Parse(_hotkey.Text).ToString();
             quickHotkey = HotkeyParser.Parse(_quickHotkey.Text).ToString();
+            agentHotkey = HotkeyParser.Parse(_agentHotkey.Text).ToString();
         }
         catch (InvalidHotkeyException ex)
         {
@@ -408,9 +413,9 @@ internal sealed class SettingsForm : Form
             return false;
         }
 
-        if (hotkey == quickHotkey)
+        if (hotkey == quickHotkey || hotkey == agentHotkey || quickHotkey == agentHotkey)
         {
-            error = "단축키와 간소화 단축키는 서로 달라야 합니다.";
+            error = "단축키, 간소화 단축키, 에이전트 단축키는 서로 달라야 합니다.";
             return false;
         }
 
@@ -422,6 +427,7 @@ internal sealed class SettingsForm : Form
             ChatGptModels = _chatGptFavorites,
             Hotkey = hotkey,
             QuickHotkey = quickHotkey,
+            AgentHotkey = agentHotkey,
             ReasoningEffort = ReasoningChoices[Math.Max(0, _reasoning.SelectedIndex)].Effort,
             DenyDataCollection = _denyCollection.Checked,
             IdleTimeoutMinutes = (int)_idleMinutes.Value,

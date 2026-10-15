@@ -85,6 +85,24 @@ internal static partial class NativeMethods
     [LibraryImport("dwmapi.dll")]
     public static partial int DwmSetWindowAttribute(nint hwnd, int attribute, ref int value, int size);
 
+    // 에이전트가 승인을 기다리는데 창이 뒤에 있으면 작업표시줄에서 깜빡여 알린다.
+    public const uint FLASHW_ALL = 0x00000003;
+    public const uint FLASHW_TIMERNOFG = 0x0000000C;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct FLASHWINFO
+    {
+        public uint cbSize;
+        public nint hwnd;
+        public uint dwFlags;
+        public uint uCount;
+        public uint dwTimeout;
+    }
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool FlashWindowEx(ref FLASHWINFO pwfi);
+
     public const int CS_DROPSHADOW = 0x00020000;
 
     // 간소화 모드의 상태 점: 작업표시줄·Alt+Tab에 안 나오고, 포커스를 안 받고, 클릭이 통과한다.
