@@ -11,6 +11,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly SettingsStore _store;
     private readonly HttpClient _http;
     private readonly ModelCatalog _catalog;
+    private readonly ChatGptServices _chatGpt;
+
+    // 히스토리 저장과 ChatGPT 토큰 갱신 저장이 겹치면 같은 임시 파일을 두고 다툰다.
+    private readonly SemaphoreSlim _saving = new(1, 1);
     private readonly NotifyIcon _tray;
     private readonly ToolStripMenuItem _pauseItem;
     private readonly GlobalHotkey _hotkey = new();
@@ -34,11 +38,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private bool _paused;
     private bool _settingsOpen;
 
-    public TrayApplicationContext(SettingsStore store, HttpClient http, ModelCatalog catalog, Settings settings, string pin)
+    public TrayApplicationContext(
+        SettingsStore store, HttpClient http, ModelCatalog catalog, ChatGptServices chatGpt, Settings settings, string pin)
     {
         _store = store;
         _http = http;
         _catalog = catalog;
+        _chatGpt = chatGpt;
         _settings = settings;
         _pin = pin;
         _history = new PromptHistory(settings.HistoryCapacity, settings.History);
@@ -82,7 +88,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _idle = new IdleTracker(timeout, warnBefore, new SystemClock());
 
         var provider = CreateProvider(settings);
-        var options = new SessionOptions(settings.FavoriteModels, settings.DenyDataCollection, settings.ReasoningEffort);
+        var options = new SessionOptions(settings.ActiveModels, settings.DenyDataCollection, settings.ReasoningEffort);
         _popup = new PopupHost(_history, OpenSettings);
         _popup.Closed += async (_, _) => await SaveHistoryAsync();
         _controller = new AppController(
@@ -105,10 +111,22 @@ internal sealed class TrayApplicationContext : ApplicationContext
     }
 
     /// <summary>BULLSEYE_MOCK=1이면 키 없이 가짜 응답으로 UI를 확인한다 (개발용).</summary>
-    private IChatProvider CreateProvider(Settings settings) =>
-        Environment.GetEnvironmentVariable("BULLSEYE_MOCK") == "1"
-            ? new MockProvider()
-            : new OpenRouterProvider(_http, settings.ApiKey);
+    private IChatProvider CreateProvider(Settings settings)
+    {
+        if (Environment.GetEnvironmentVariable("BULLSEYE_MOCK") == "1") return new MockProvider();
+        if (settings.Provider != ProviderKind.ChatGpt) return new OpenRouterProvider(_http, settings.ApiKey);
+
+        var tokens = new ChatGptTokenSource(
+            _chatGpt.Auth, settings.ChatGpt ?? ChatGptAccount.Create(), SaveChatGptAccountAsync, TimeProvider.System);
+        return new ResponsesProvider(_http, tokens);
+    }
+
+    /// <summary>토큰을 갱신할 때마다 교체된 refresh token을 USB 파일에 남긴다 (다음 실행에서 쓸 수 있게).</summary>
+    private Task SaveChatGptAccountAsync(ChatGptAccount account)
+    {
+        _settings = _settings with { ChatGpt = account };
+        return SaveSettingsAsync();
+    }
 
     private void RegisterHotkeys()
     {
@@ -198,11 +216,17 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _settingsOpen = true;
         try
         {
-            using var form = new SettingsForm(_store, _catalog, SettingsMode.Edit, _settings with { History = _history.Items.ToList() }, _pin);
+            using var form = new SettingsForm(
+                _store, _catalog, _chatGpt, SettingsMode.Edit, _settings with { History = _history.Items.ToList() }, _pin);
             if (form.ShowDialog() == DialogResult.OK && form.Result is not null)
             {
                 _pin = form.Pin ?? _pin;
                 Apply(form.Result);
+            }
+            else if (form.ChatGptAccount != _settings.ChatGpt)
+            {
+                // 취소로 닫았어도 창에서 로그인·로그아웃한 것은 이미 파일에 저장됐다. 옛 토큰으로 덮어쓰지 않게 받는다.
+                Apply(_settings with { ChatGpt = form.ChatGptAccount });
             }
         }
         finally
@@ -224,14 +248,26 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (_history.Items.SequenceEqual(_settings.History)) return;
 
         _settings = _settings with { History = _history.Items.ToList() };
-        var snapshot = _settings;
+        await SaveSettingsAsync();
+    }
+
+    /// <summary>지금 설정을 USB 파일에 쓴다. 한 번에 하나씩.</summary>
+    private async Task SaveSettingsAsync()
+    {
+        await _saving.WaitAsync();
         try
         {
-            await Task.Run(() => _store.Save(snapshot, _pin));
+            var snapshot = _settings;
+            var pin = _pin;
+            await Task.Run(() => _store.Save(snapshot, pin));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            Notify($"히스토리를 저장하지 못했습니다: {ex.Message}", ToolTipIcon.Warning);
+            Notify($"설정을 저장하지 못했습니다: {ex.Message}", ToolTipIcon.Warning);
+        }
+        finally
+        {
+            _saving.Release();
         }
     }
 

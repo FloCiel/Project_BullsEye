@@ -35,15 +35,16 @@ internal static class Program
         // 타임아웃은 OpenRouterProvider가 관리한다 (긴 추론 응답이 100초 기본값에 끊기지 않게).
         using var http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
         var catalog = new ModelCatalog(http);
+        var chatGpt = new ChatGptServices(new ChatGptAuth(http, TimeProvider.System), new ChatGptModelCatalog(http));
 
         // 실행할 때마다 설정 창 (잠금 해제) → 닫으면 트레이로.
-        using var settings = new SettingsForm(store, catalog, store.Exists ? SettingsMode.Unlock : SettingsMode.FirstRun);
+        using var settings = new SettingsForm(store, catalog, chatGpt, store.Exists ? SettingsMode.Unlock : SettingsMode.FirstRun);
         Action onSecondLaunch = () => settings.Activate();
         instance.Listen(SynchronizationContext.Current!, () => onSecondLaunch());
 
         if (settings.ShowDialog() != DialogResult.OK || settings.Result is null || settings.Pin is null) return;
 
-        var tray = new TrayApplicationContext(store, http, catalog, settings.Result, settings.Pin);
+        var tray = new TrayApplicationContext(store, http, catalog, chatGpt, settings.Result, settings.Pin);
         onSecondLaunch = tray.OpenSettings;
         Application.Run(tray);
     }

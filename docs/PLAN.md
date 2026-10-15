@@ -15,7 +15,7 @@
 | 기술 스택 | C# / **.NET 10 (LTS)** / WinForms, self-contained 단일 exe (`win-x64`) |
 | 배포 | **USB 포터블**. 설치·레지스트리·자동 실행 없음. 모든 경로는 exe 기준 상대 경로 |
 | 사용자 | 나 혼자. 내 PC + 수업 공용 PC (학교망, 외부 인터넷 가능) |
-| AI Provider | **OpenRouter** (OpenAI 호환 `/api/v1/chat/completions`, SSE 스트리밍). `IChatProvider` 인터페이스로 추상화 |
+| AI Provider | 설정에서 선택. **OpenRouter** (API 키, OpenAI 호환 `/api/v1/chat/completions`) 또는 **ChatGPT 요금제** ("Sign in with ChatGPT" OAuth, Responses API `/v1/responses`, OpenAI 모델만). 둘 다 SSE 스트리밍, `IChatProvider` 인터페이스로 추상화 |
 | 모델 | 설정에서 즐겨찾기 2~4개 선택(`/api/v1/models`로 목록 조회). 기본 = 빠른 모델(Haiku 계열), 2순위 = 정확한 모델(Sonnet 계열). 팝업에서 `[모델 ▾]` / `Ctrl+Tab` 순환 |
 | 데이터 정책 | 요청에 `provider.data_collection: "deny"` 기본 적용, 설정에서 끌 수 있음 |
 | 추론(reasoning) | **기본 켬** (`reasoning: {enabled: true}`, 정확도 우선). 설정에서 끌 수 있음. `max_tokens`는 보내지 않음 (추론이 코드를 잘라먹지 않게) |
@@ -35,7 +35,8 @@
 
 | 항목 | 결정 |
 |---|---|
-| 키 저장 | USB의 `BullsEye.dat` — 설정 전체(키, 히스토리 포함)를 **PIN 암호화** |
+| 키 저장 | USB의 `BullsEye.dat` — 설정 전체(키, ChatGPT 토큰, 히스토리 포함)를 **PIN 암호화** |
+| ChatGPT 로그인 | 브라우저 OAuth(PKCE S256, `127.0.0.1` 루프백 콜백, 1455 → 빈 포트). 첫 로그인은 `dynamic_agent_client`로 등록해 발급된 client id 저장, `ext_agent_host_id`는 USB(설정 파일)마다 고정 UUID. ID 토큰은 JWKS로 RS256 서명·발급자·대상·만료·nonce 검증, `chatgpt.tokens.use.direct` 권한 없으면 거절. access token(1시간)은 만료 5분 전 자동 갱신, 교체된 refresh token(30일)은 즉시 USB에 저장. 로그아웃 = 서버 폐기 + 토큰 삭제 (등록은 유지) |
 | PIN | **영문+숫자 8자 이상**. KDF = Argon2id(약 0.5s/시도), 암호화 = AES-256-GCM |
 | PIN 분실 | 설정 창 `초기화` → 파일 삭제 후 재입력 (복구 수단 없음) |
 | 키 표시 | 마스킹(`sk-or-…a1b2`), 다시 보기 기능 없음 |
@@ -43,7 +44,7 @@
 | 유휴 종료 | 기본 60분 무사용 시 종료, 5분 전 트레이 알림, 설정에서 변경 |
 | 클립보드 기록 | 우리가 쓰는 클립보드에 기록/클라우드 제외 플래그. 종료 시 우리가 넣은 내용이면 클립보드 삭제 |
 | 크래시 | 전역 예외 처리 → 깔끔하게 종료 |
-| 운영 규칙 | OpenRouter에서 **이 앱 전용 키 + 키별 크레딧 한도** 설정. USB 분실 시 즉시 키 폐기 |
+| 운영 규칙 | OpenRouter에서 **이 앱 전용 키 + 키별 크레딧 한도** 설정. USB 분실 시 즉시 키 폐기. ChatGPT를 쓰면 USB 분실 시 ChatGPT 설정 → 연결된 앱에서 BullsEye 삭제 (앱 로그아웃만으로는 연결이 끊기지 않음), 앱별 주간 사용 상한 설정 |
 
 ### 에러 처리
 

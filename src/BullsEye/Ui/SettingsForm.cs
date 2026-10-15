@@ -18,16 +18,30 @@ internal enum SettingsMode
 /// <summary>설정 겸 잠금 해제 창. 저장에 성공하면 <see cref="Result"/>와 <see cref="Pin"/>을 채우고 OK로 닫힌다.</summary>
 internal sealed class SettingsForm : Form
 {
+    private const string SignInLabel = "Continue with ChatGPT";
+
     private readonly SettingsStore _store;
     private readonly ModelCatalog _catalog;
+    private readonly ChatGptServices _chatGpt;
     private readonly Theme _theme = Theme.Current();
     private SettingsMode _mode;
     private Settings _settings;
+
+    private static readonly (ProviderKind Kind, string Label)[] ProviderChoices =
+    [
+        (ProviderKind.OpenRouter, "OpenRouter (API 키, 크레딧 차감)"),
+        (ProviderKind.ChatGpt, "ChatGPT (Plus/Pro 요금제)"),
+    ];
 
     private readonly TextBox _pin = PasswordBox("PIN");
     private readonly Button _unlock;
     private readonly TextBox _apiKey = PasswordBox("OpenRouter API 키");
     private readonly Label _apiKeyMask = new() { AutoSize = true };
+    private readonly ComboBox _provider = new() { DropDownStyle = ComboBoxStyle.DropDownList, AccessibleName = "AI 서비스" };
+    private readonly Label _chatGptStatus = new() { AutoSize = true };
+    private readonly Button _signIn;
+    private readonly Button _signOut;
+    private readonly LinkLabel _manageUsage = new() { Text = "Manage usage", AutoSize = true, Margin = new Padding(8, 8, 0, 0) };
     private readonly TextBox _newPin = PasswordBox("새 PIN");
     private readonly TextBox _newPinConfirm = PasswordBox("새 PIN 확인");
     private readonly ListBox _favorites = new() { Height = 96, IntegralHeight = false, AccessibleName = "즐겨찾기 모델" };
@@ -57,11 +71,25 @@ internal sealed class SettingsForm : Form
     private readonly Button _save;
     private readonly Button _reset;
     private readonly TableLayoutPanel _body;
+    private (Control Caption, Control Field) _apiKeyRow;
+    private (Control Caption, Control Field) _chatGptRow;
 
-    public SettingsForm(SettingsStore store, ModelCatalog catalog, SettingsMode mode, Settings? current = null, string? pin = null)
+    // 서비스마다 즐겨찾기와 모델 목록이 따로 있다. 목록 상자는 지금 고른 서비스 것만 보여준다.
+    private List<string> _openRouterFavorites = [];
+    private List<string> _chatGptFavorites = [];
+    private object[] _openRouterCatalog = [];
+    private object[] _chatGptCatalog = [];
+    private string _openRouterCatalogStatus = "";
+    private string _chatGptCatalogStatus = "";
+    private ProviderKind _shownProvider;
+    private CancellationTokenSource? _signInCancel;
+
+    public SettingsForm(
+        SettingsStore store, ModelCatalog catalog, ChatGptServices chatGpt, SettingsMode mode, Settings? current = null, string? pin = null)
     {
         _store = store;
         _catalog = catalog;
+        _chatGpt = chatGpt;
         _mode = mode;
         _settings = current ?? new Settings();
         Pin = pin;
@@ -81,6 +109,8 @@ internal sealed class SettingsForm : Form
         _unlock = ThemedButton("잠금 해제");
         _save = ThemedButton(mode == SettingsMode.FirstRun ? "저장하고 시작" : "시작");
         _reset = ThemedButton("초기화…");
+        _signIn = ThemedButton(SignInLabel);
+        _signOut = ThemedButton("로그아웃");
 
         _body = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
         _body.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -97,6 +127,12 @@ internal sealed class SettingsForm : Form
     public Settings? Result { get; private set; }
 
     public string? Pin { get; private set; }
+
+    /// <summary>
+    /// 창 안에서 바뀐 ChatGPT 연결 (로그인·로그아웃은 저장까지 바로 한다).
+    /// 취소로 닫아도 트레이가 이것을 받아야 다음 저장에서 옛 토큰으로 덮어쓰지 않는다.
+    /// </summary>
+    public ChatGptAccount? ChatGptAccount => _settings.ChatGpt;
 
     protected override void OnHandleCreated(EventArgs e)
     {
@@ -122,8 +158,16 @@ internal sealed class SettingsForm : Form
         Section("잠금");
         Row("PIN", Inline(_pin, _unlock));
 
-        Section("OpenRouter");
-        Row("API 키", Stack(_apiKeyMask, _apiKey));
+        Section("AI 서비스");
+        _provider.Items.AddRange(ProviderChoices.Select(c => (object)c.Label).ToArray());
+        Row("서비스", Stack(_provider, Hint("ChatGPT 요금제로는 OpenAI 모델만 쓸 수 있습니다. 다른 회사 모델은 OpenRouter로.")));
+        _apiKeyRow = Row("OpenRouter 키", Stack(_apiKeyMask, _apiKey));
+        _chatGptRow = Row("ChatGPT", Stack(
+            _chatGptStatus,
+            Inline(_signIn, _signOut, _manageUsage),
+            Hint("로그인하면 이 앱의 요청이 ChatGPT 요금제 사용량에서 차감됩니다. USB를 잃어버리면 ChatGPT 설정의 연결된 앱에서 BullsEye를 지우세요.")));
+
+        Section("보안");
         Row("PIN 설정", Stack(_newPin, _newPinConfirm, Hint("영문과 숫자를 섞어 8자 이상. 잊으면 초기화해야 합니다.")));
 
         Section("모델");
@@ -175,6 +219,10 @@ internal sealed class SettingsForm : Form
         };
         _save.Click += async (_, _) => await SaveAsync();
         _reset.Click += (_, _) => Reset();
+        _provider.SelectedIndexChanged += (_, _) => OnProviderChanged();
+        _signIn.Click += async (_, _) => await SignInAsync();
+        _signOut.Click += async (_, _) => await SignOutAsync();
+        _manageUsage.LinkClicked += (_, _) => OpenBrowser(ChatGptErrors.UsageUrl);
     }
 
     // 콤보박스의 Enter는 KeyDown보다 먼저 AcceptButton(저장)으로 가므로 여기서 가로챈다.
@@ -214,7 +262,11 @@ internal sealed class SettingsForm : Form
         _save.Visible = !locked;
         AcceptButton = locked ? null : _save;
 
-        if (!locked) LoadFields();
+        if (!locked)
+        {
+            LoadFields();
+            UpdateProviderRows();
+        }
     }
 
     // 잠금 상태에서도 쓸 수 있는 줄: PIN 입력, 메시지, 아래 버튼
@@ -225,8 +277,12 @@ internal sealed class SettingsForm : Form
 
     private void LoadFields()
     {
-        _favorites.Items.Clear();
-        foreach (var model in _settings.FavoriteModels) _favorites.Items.Add(model);
+        _openRouterFavorites = _settings.FavoriteModels.ToList();
+        _chatGptFavorites = _settings.ChatGptModels.ToList();
+        _shownProvider = _settings.Provider;
+        ShowFavorites();
+        _provider.SelectedIndex = Math.Max(0, Array.FindIndex(ProviderChoices, c => c.Kind == _settings.Provider));
+        UpdateChatGptStatus();
         _hotkey.Text = _settings.Hotkey;
         _quickHotkey.Text = _settings.QuickHotkey;
         _reasoning.SelectedIndex = Math.Max(0, Array.FindIndex(ReasoningChoices, c => c.Effort == _settings.ReasoningEffort));
@@ -298,10 +354,18 @@ internal sealed class SettingsForm : Form
         pin = Pin ?? "";
         error = "";
 
+        StoreFavorites();
+        var provider = _shownProvider;
         var apiKey = string.IsNullOrWhiteSpace(_apiKey.Text) ? _settings.ApiKey : _apiKey.Text.Trim();
-        if (apiKey.Length == 0)
+        if (provider == ProviderKind.OpenRouter && apiKey.Length == 0)
         {
             error = "OpenRouter API 키를 입력하세요.";
+            return false;
+        }
+
+        if (provider == ProviderKind.ChatGpt && _settings.ChatGpt is not { IsSignedIn: true })
+        {
+            error = "ChatGPT에 로그인하세요 (Continue with ChatGPT).";
             return false;
         }
 
@@ -325,8 +389,7 @@ internal sealed class SettingsForm : Form
             }
         }
 
-        var favorites = _favorites.Items.Cast<string>().ToList();
-        if (favorites.Count == 0)
+        if ((provider == ProviderKind.ChatGpt ? _chatGptFavorites : _openRouterFavorites).Count == 0)
         {
             error = "즐겨찾기 모델을 하나 이상 추가하세요.";
             return false;
@@ -353,8 +416,10 @@ internal sealed class SettingsForm : Form
 
         settings = _settings with
         {
+            Provider = provider,
             ApiKey = apiKey,
-            FavoriteModels = favorites,
+            FavoriteModels = _openRouterFavorites,
+            ChatGptModels = _chatGptFavorites,
             Hotkey = hotkey,
             QuickHotkey = quickHotkey,
             ReasoningEffort = ReasoningChoices[Math.Max(0, _reasoning.SelectedIndex)].Effort,
@@ -389,18 +454,208 @@ internal sealed class SettingsForm : Form
 
     private async Task LoadCatalogAsync()
     {
-        _catalogStatus.Text = "모델 목록 불러오는 중…";
+        _openRouterCatalogStatus = "모델 목록 불러오는 중…";
+        ShowCatalog();
         try
         {
             var models = await _catalog.FetchAsync();
-            _modelPicker.Items.AddRange(models.Select(m => (object)m.Id).ToArray());
-            _catalogStatus.Text = $"{models.Count}개 모델. 이름 일부를 입력하면 추천합니다.";
+            _openRouterCatalog = models.Select(m => (object)m.Id).ToArray();
+            _openRouterCatalogStatus = $"{models.Count}개 모델. 이름 일부를 입력하면 추천합니다.";
         }
         catch (BullsEyeException)
         {
-            _catalogStatus.Text = "목록을 불러오지 못했습니다. 모델 ID를 직접 입력하세요 (예: deepseek/deepseek-v4.1-flash).";
+            _openRouterCatalogStatus = "목록을 불러오지 못했습니다. 모델 ID를 직접 입력하세요 (예: deepseek/deepseek-v4.1-flash).";
+        }
+
+        ShowCatalog();
+    }
+
+    /// <summary>ChatGPT 모델 목록은 로그인한 계정마다 다르다 (토큰이 필요).</summary>
+    private async Task LoadChatGptCatalogAsync()
+    {
+        if (_settings.ChatGpt is not { IsSignedIn: true } account)
+        {
+            _chatGptCatalogStatus = "로그인하면 쓸 수 있는 모델 목록을 불러옵니다.";
+            ShowCatalog();
+            return;
+        }
+
+        _chatGptCatalogStatus = "모델 목록 불러오는 중…";
+        ShowCatalog();
+        var tokens = new ChatGptTokenSource(_chatGpt.Auth, account, PersistAccountAsync, TimeProvider.System);
+        try
+        {
+            var models = await _chatGpt.Catalog.FetchAsync(tokens);
+            _chatGptCatalog = models.Select(m => (object)m.Id).ToArray();
+            _chatGptCatalogStatus = $"{models.Count}개 모델 (이 계정에서 쓸 수 있는 것).";
+        }
+        catch (BullsEyeException ex)
+        {
+            _chatGptCatalogStatus = "목록을 불러오지 못했습니다: " + ErrorMessages.For(ex).Message;
+        }
+
+        ShowCatalog();
+    }
+
+    private void OnProviderChanged()
+    {
+        if (_provider.SelectedIndex < 0) return;
+        var kind = ProviderChoices[_provider.SelectedIndex].Kind;
+        if (kind != _shownProvider)
+        {
+            StoreFavorites();
+            _shownProvider = kind;
+            ShowFavorites();
+        }
+
+        UpdateProviderRows();
+        if (kind == ProviderKind.ChatGpt && _chatGptCatalog.Length == 0) _ = LoadChatGptCatalogAsync();
+    }
+
+    private void StoreFavorites()
+    {
+        var items = _favorites.Items.Cast<string>().ToList();
+        if (_shownProvider == ProviderKind.ChatGpt) _chatGptFavorites = items;
+        else _openRouterFavorites = items;
+    }
+
+    private void ShowFavorites()
+    {
+        _favorites.Items.Clear();
+        foreach (var model in _shownProvider == ProviderKind.ChatGpt ? _chatGptFavorites : _openRouterFavorites)
+        {
+            _favorites.Items.Add(model);
+        }
+
+        ShowCatalog();
+    }
+
+    private void ShowCatalog()
+    {
+        var chatGpt = _shownProvider == ProviderKind.ChatGpt;
+        _modelPicker.Items.Clear();
+        _modelPicker.Items.AddRange(chatGpt ? _chatGptCatalog : _openRouterCatalog);
+        _catalogStatus.Text = chatGpt ? _chatGptCatalogStatus : _openRouterCatalogStatus;
+    }
+
+    private void UpdateProviderRows()
+    {
+        if (_mode == SettingsMode.Unlock) return; // 잠긴 동안은 전부 숨김 (ApplyMode)
+        var chatGpt = _shownProvider == ProviderKind.ChatGpt;
+        _apiKeyRow.Caption.Visible = _apiKeyRow.Field.Visible = !chatGpt;
+        _chatGptRow.Caption.Visible = _chatGptRow.Field.Visible = chatGpt;
+    }
+
+    private void UpdateChatGptStatus()
+    {
+        var account = _settings.ChatGpt;
+        var signedIn = account is { IsSignedIn: true };
+        _chatGptStatus.Text = signedIn ? $"Using ChatGPT plan — {account!.Email ?? "로그인됨"}" : "로그인되어 있지 않습니다.";
+        _signIn.Visible = !signedIn;
+        _signOut.Visible = signedIn;
+    }
+
+    /// <summary>브라우저에서 로그인한다. 기다리는 동안 버튼을 다시 누르면 취소.</summary>
+    private async Task SignInAsync()
+    {
+        if (_signInCancel is not null)
+        {
+            _signInCancel.Cancel();
+            return;
+        }
+
+        using var cancel = new CancellationTokenSource();
+        _signInCancel = cancel;
+        _signIn.Text = "로그인 취소";
+        ShowMessage("브라우저에서 ChatGPT 로그인을 마치세요…", isError: false);
+        try
+        {
+            var account = await _chatGpt.Auth.SignInAsync(_settings.ChatGpt ?? Core.ChatGptAccount.Create(), OpenBrowser, cancel.Token);
+            var firstTime = !account.WelcomeShown;
+            await PersistAccountAsync(account with { WelcomeShown = true });
+            ShowMessage("ChatGPT에 로그인했습니다.", isError: false);
+            Activate();
+
+            if (firstTime)
+            {
+                MessageBox.Show(
+                    this,
+                    $"이 앱의 요청은 ChatGPT 요금제 사용량에서 차감됩니다. 사용량은 ChatGPT 설정에서 관리하세요.\n\n{ChatGptErrors.UsageUrl}",
+                    "ChatGPT 요금제를 사용합니다",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
+
+            _chatGptCatalog = [];
+            _ = LoadChatGptCatalogAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            ShowMessage("로그인을 취소했습니다.", isError: false);
+        }
+        catch (BullsEyeException ex)
+        {
+            ShowMessage(ErrorMessages.For(ex).Message, isError: true);
+            Activate();
+        }
+        finally
+        {
+            _signInCancel = null;
+            _signIn.Text = SignInLabel;
+            UpdateChatGptStatus();
         }
     }
+
+    /// <summary>서버에서 토큰을 폐기하고 지운다. 등록(client id)은 다시 로그인할 때 쓰려고 남긴다.</summary>
+    private async Task SignOutAsync()
+    {
+        if (_settings.ChatGpt is not { } account) return;
+
+        SetBusy(true, "로그아웃 중…");
+        _signOut.Enabled = false;
+        try
+        {
+            var confirmed = await _chatGpt.Auth.RevokeAsync(account, CancellationToken.None);
+            await PersistAccountAsync(account.SignedOut());
+            _chatGptCatalog = [];
+            ShowCatalog();
+            ShowMessage(
+                confirmed
+                    ? "로그아웃했습니다."
+                    : "로그아웃했지만 서버에서 연결 해제를 확인하지 못했습니다. ChatGPT 설정의 연결된 앱에서 BullsEye를 지우세요.",
+                isError: !confirmed);
+        }
+        finally
+        {
+            _signOut.Enabled = true;
+            SetBusy(false);
+            UpdateChatGptStatus();
+        }
+    }
+
+    /// <summary>
+    /// 로그인·로그아웃·토큰 갱신은 "시작"을 누르기 전에 바로 저장한다 (교체된 refresh token을 잃지 않게).
+    /// 첫 실행이면 PIN이 아직 없어 "저장하고 시작" 때 함께 저장된다.
+    /// </summary>
+    private async Task PersistAccountAsync(ChatGptAccount account)
+    {
+        _settings = _settings with { ChatGpt = account };
+        if (_mode != SettingsMode.Edit || Pin is null) return;
+
+        var snapshot = _settings;
+        var pin = Pin;
+        try
+        {
+            await Task.Run(() => _store.Save(snapshot, pin));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ShowMessage($"ChatGPT 로그인 정보를 저장하지 못했습니다: {ex.Message}", isError: true);
+        }
+    }
+
+    private static void OpenBrowser(string url) =>
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
 
     private void AddFavorite()
     {
@@ -457,7 +712,7 @@ internal sealed class SettingsForm : Form
         _body.RowCount++;
     }
 
-    private void Row(string label, Control field)
+    private (Control Caption, Control Field) Row(string label, Control field)
     {
         var caption = new Label
         {
@@ -471,6 +726,7 @@ internal sealed class SettingsForm : Form
         _body.Controls.Add(caption, 0, _body.RowCount);
         _body.Controls.Add(field, 1, _body.RowCount);
         _body.RowCount++;
+        return (caption, field);
     }
 
     private Label Hint(string text) => new()
@@ -542,5 +798,6 @@ internal sealed class SettingsForm : Form
 
         _apiKeyMask.ForeColor = _theme.Muted;
         _catalogStatus.ForeColor = _theme.Muted;
+        _manageUsage.LinkColor = _manageUsage.ActiveLinkColor = _manageUsage.VisitedLinkColor = _theme.Accent;
     }
 }
