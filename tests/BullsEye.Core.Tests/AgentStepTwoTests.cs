@@ -6,15 +6,20 @@ namespace BullsEye.Core.Tests;
 public class AgentBackupTests : IDisposable
 {
     private readonly TempFolder _folder = new();
+    private readonly TempFolder _usb = new();
     private readonly FakeApprover _approver = new();
     private static readonly DateTimeOffset Started = new(2026, 10, 15, 9, 30, 0, TimeSpan.Zero);
 
-    public void Dispose() => _folder.Dispose();
+    public void Dispose()
+    {
+        _folder.Dispose();
+        _usb.Dispose();
+    }
 
     private (AgentTools Tools, AgentBackup Backup) Create()
     {
         var workspace = new AgentWorkspace(_folder.Path);
-        var backup = new AgentBackup(workspace, Started);
+        var backup = new AgentBackup(workspace, _usb.Path, Started);
         return (new AgentTools(workspace, _approver, backup), backup);
     }
 
@@ -22,7 +27,7 @@ public class AgentBackupTests : IDisposable
         tools.ExecuteAsync(new ToolCall("c", "edit_file", $$"""{"path":"{{path}}","old_text":"{{oldText}}","new_text":"{{newText}}"}"""));
 
     [Fact]
-    public async Task ApprovedEdit_CopiesOriginalBytesOnce_IntoHiddenFolder()
+    public async Task ApprovedEdit_CopiesOriginalOnce_ToUsbNotWorkFolder()
     {
         var original = Encoding.UTF8.GetBytes("x = 1;\r\ny = 2;");
         _folder.Bytes("sub/a.m", original);
@@ -31,11 +36,13 @@ public class AgentBackupTests : IDisposable
         await Edit(tools, "sub/a.m", "x = 1;", "x = 10;");
         await Edit(tools, "sub/a.m", "y = 2;", "y = 20;");
 
-        var copy = Path.Combine(backup.Folder, "sub", "a.m");
-        Assert.Equal(original, File.ReadAllBytes(copy));
+        // 백업은 USB 쪽 "시각 작업폴더이름" 아래, 작업 폴더(학교 PC일 수 있음)에는 아무것도 생기지 않는다.
+        Assert.Equal(Path.Combine(_usb.Path, $"{Started.ToLocalTime():yyyyMMdd-HHmmss} {Path.GetFileName(_folder.Path)}"), backup.Folder);
+        Assert.Equal(original, File.ReadAllBytes(Path.Combine(backup.Folder, "sub", "a.m")));
+        Assert.Equal(_folder.Path, File.ReadAllText(Path.Combine(backup.Folder, AgentBackup.SourceFileName)).Trim());
         Assert.Equal(1, backup.Count);
-        Assert.StartsWith(Path.Combine(_folder.Path, AgentBackup.FolderName), backup.Folder);
-        Assert.True(new DirectoryInfo(Path.Combine(_folder.Path, AgentBackup.FolderName)).Attributes.HasFlag(FileAttributes.Hidden));
+        Assert.Equal(["a.m"], Directory.GetFileSystemEntries(Path.Combine(_folder.Path, "sub")).Select(Path.GetFileName));
+        Assert.Equal(["sub"], Directory.GetFileSystemEntries(_folder.Path).Select(Path.GetFileName));
         Assert.Equal("x = 10;\r\ny = 20;", File.ReadAllText(Path.Combine(_folder.Path, "sub", "a.m")));
     }
 
@@ -52,21 +59,6 @@ public class AgentBackupTests : IDisposable
 
         Assert.Equal(0, backup.Count);
         Assert.False(Directory.Exists(backup.Folder));
-    }
-
-    [Fact]
-    public async Task BackupFolder_IsHiddenFromListing_AndCannotBeWritten()
-    {
-        _folder.File("a.m", "x = 1;");
-        var (tools, _) = Create();
-        await Edit(tools, "a.m", "x = 1;", "x = 2;");
-
-        var list = await tools.ExecuteAsync(new ToolCall("c", "list_files", "{}"));
-        var write = await tools.ExecuteAsync(new ToolCall("c", "write_file", $$"""{"path":"{{AgentBackup.FolderName}}/x.m","content":"bad"}"""));
-
-        Assert.Equal("a.m", list.Content);
-        Assert.True(write.IsError);
-        Assert.Single(_approver.Changes);
     }
 }
 
@@ -170,9 +162,14 @@ public class AgentSettingsTests
 public class MockAgentTests : IDisposable
 {
     private readonly TempFolder _folder = new();
+    private readonly TempFolder _usb = new();
     private readonly FakeApprover _approver = new();
 
-    public void Dispose() => _folder.Dispose();
+    public void Dispose()
+    {
+        _folder.Dispose();
+        _usb.Dispose();
+    }
 
     private async Task<AgentSession> Run()
     {
@@ -182,7 +179,7 @@ public class MockAgentTests : IDisposable
             workspace,
             _approver,
             new AgentOptions("mock/model", true, ReasoningEffort.Medium),
-            new AgentBackup(workspace, DateTimeOffset.Now));
+            new AgentBackup(workspace, _usb.Path, DateTimeOffset.Now));
         await session.RunAsync("검토해줘");
         return session;
     }

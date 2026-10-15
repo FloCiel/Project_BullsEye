@@ -14,6 +14,7 @@ internal sealed class AgentForm : Form, IChangeApprover
     private readonly AgentOptions _options;
     private readonly Action _openSettings;
     private readonly Func<string?, string?> _pickFolder;
+    private readonly string _backupRoot;
     private readonly Theme _theme = Theme.Current();
 
     private readonly Label _folder;
@@ -42,18 +43,21 @@ internal sealed class AgentForm : Form, IChangeApprover
     private bool _rejected;
 
     /// <param name="pickFolder">폴더 선택 창 (시작 폴더 → 고른 폴더, 취소면 null).</param>
+    /// <param name="backupRoot">원본을 복사해 둘 곳 (USB의 exe 옆).</param>
     public AgentForm(
         IChatProvider provider,
         AgentOptions options,
         IReadOnlyList<string> models,
         string folder,
         Action openSettings,
-        Func<string?, string?> pickFolder)
+        Func<string?, string?> pickFolder,
+        string backupRoot)
     {
         _provider = provider;
         _options = options;
         _openSettings = openSettings;
         _pickFolder = pickFolder;
+        _backupRoot = backupRoot;
 
         Text = "BullsEye 에이전트";
         Icon = AppIcon.Create();
@@ -97,7 +101,7 @@ internal sealed class AgentForm : Form, IChangeApprover
             Font = Theme.UiFont(9f),
             ForeColor = _theme.Muted,
             Padding = new Padding(0, gap / 2, 0, gap),
-            Text = "MATLAB에서 저장하지 않은 파일은 먼저 저장하세요. 바꾼 파일은 적용 전에 하나씩 확인하고, 원본은 폴더의 .bullseye-backup에 남습니다.",
+            Text = "MATLAB에서 저장하지 않은 파일은 먼저 저장하세요. 바꾼 파일은 적용 전에 하나씩 확인하고, 원본은 USB의 BullsEye-backup 폴더에 남습니다.",
         };
 
         // ── 가운데: 진행 기록
@@ -260,7 +264,7 @@ internal sealed class AgentForm : Form, IChangeApprover
     private void StartSession(string folder)
     {
         _workspace = new AgentWorkspace(folder);
-        _backup = new AgentBackup(_workspace, DateTimeOffset.Now);
+        _backup = new AgentBackup(_workspace, _backupRoot, DateTimeOffset.Now);
         _session = new AgentSession(_provider, _workspace, this, _options, _backup);
         if (_model.SelectedItem is string model) _session.Model = model;
         _session.Progress += OnProgress;

@@ -34,7 +34,8 @@ internal static class Program
                 models,
                 args[1],
                 () => { },
-                _ => null));
+                _ => null,
+                Path.Combine(AppContext.BaseDirectory, AgentBackup.FolderName)));
             return;
         }
 #endif

@@ -7,10 +7,15 @@ public class QuickAgentControllerTests : IDisposable
     private readonly TempFolder _folder = new();
     private readonly FakeIndicator _indicator = new();
     private readonly FakeClipboard _clipboard = new();
+    private readonly TempFolder _usb = new();
     private readonly List<QuickAgentReport> _reports = [];
     private string? _lastFolder;
 
-    public void Dispose() => _folder.Dispose();
+    public void Dispose()
+    {
+        _folder.Dispose();
+        _usb.Dispose();
+    }
 
     private QuickAgentController Create(string title, string? selection)
     {
@@ -23,7 +28,7 @@ public class QuickAgentControllerTests : IDisposable
             (folder, approver) =>
             {
                 var workspace = new AgentWorkspace(folder);
-                var backup = new AgentBackup(workspace, DateTimeOffset.Now);
+                var backup = new AgentBackup(workspace, _usb.Path, DateTimeOffset.Now);
                 var session = new AgentSession(
                     new MockProvider(TimeSpan.Zero), workspace, approver, new AgentOptions("mock/model", true, ReasoningEffort.Off), backup);
                 return (session, backup);

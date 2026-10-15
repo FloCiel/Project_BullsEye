@@ -126,7 +126,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             {
                 RememberAgentFolder(folder);
                 var workspace = new AgentWorkspace(folder);
-                var backup = new AgentBackup(workspace, DateTimeOffset.Now);
+                var backup = new AgentBackup(workspace, BackupRoot, DateTimeOffset.Now);
                 return (new AgentSession(provider, workspace, approver, AgentOptionsFor(settings), backup), backup);
             },
             () => _settings.AgentFolder,
@@ -134,6 +134,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         RegisterHotkeys();
     }
+
+    /// <summary>에이전트 백업은 작업 폴더(학교 PC일 수 있음)가 아니라 USB의 exe 옆에 둔다.</summary>
+    private static string BackupRoot => Path.Combine(AppContext.BaseDirectory, AgentBackup.FolderName);
 
     private static AgentOptions AgentOptionsFor(Settings settings) => new(
         settings.ActiveModels[0], settings.DenyDataCollection, settings.ReasoningEffort, Language: settings.CodeLanguage ?? "MATLAB");
@@ -291,7 +294,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         var folder = Existing(MatlabFolder.FromWindowTitle(windowTitle)) ?? Existing(_settings.AgentFolder) ?? PickFolder(null);
         if (folder is null) return;
 
-        var form = new AgentForm(_provider, AgentOptionsFor(_settings), models, folder, OpenSettings, PickFolder);
+        var form = new AgentForm(_provider, AgentOptionsFor(_settings), models, folder, OpenSettings, PickFolder, BackupRoot);
         form.FolderChanged += (_, picked) => RememberAgentFolder(picked);
         form.FormClosed += (_, _) =>
         {

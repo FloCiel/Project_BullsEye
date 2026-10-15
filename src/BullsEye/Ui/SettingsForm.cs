@@ -199,7 +199,7 @@ internal sealed class SettingsForm : Form
         Section("동작");
         Row("팝업 단축키", Stack(_hotkey, Hint("팝업 창에 지시. 예: Ctrl+Alt+K")));
         Row("간소화 단축키", Stack(_quickHotkey, Hint("'% >> 지시' 주석과 코드를 선택하고 누름 → 구석 점이 초록이면 Ctrl+V.")));
-        Row("에이전트 단축키", Stack(_agentHotkey, Hint("누르면 에이전트 창. '% >> 지시'를 선택하고 누르면 창 없이 적용 (원본 백업).")));
+        Row("에이전트 단축키", Stack(_agentHotkey, Hint("누르면 에이전트 창. '% >> 지시'를 선택하고 누르면 창 없이 적용 (원본은 USB의 BullsEye-backup).")));
         _language.Items.Add(AutoLanguage);
         _language.Items.AddRange(LanguageDetector.Choices.Select(c => (object)c).ToArray());
         Row("코드 언어", Stack(_language, Hint("다른 언어(C++ 등)로 답하면 MATLAB으로 고정.")));

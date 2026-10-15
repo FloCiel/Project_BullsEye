@@ -179,7 +179,6 @@ public sealed class AgentTools(AgentWorkspace workspace, IChangeApprover approve
     private async Task<ToolResult?> ApplyAsync(string path, string? before, string after, CancellationToken cancellationToken)
     {
         var relative = workspace.Relative(workspace.Resolve(path));
-        if (AgentBackup.IsBackupPath(relative)) throw new AgentToolException($"{AgentBackup.FolderName} holds backups and cannot be changed.");
         if (before == after) return new ToolResult($"No change: {relative} already has this content.");
 
         if (!await approver.ApproveAsync(new FileChange(relative, before, after), cancellationToken))
