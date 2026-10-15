@@ -33,6 +33,9 @@ public sealed record Settings
     /// <summary>마지막으로 에이전트를 돌린 폴더 (MATLAB 창 제목에서 폴더를 못 찾을 때 먼저 제안).</summary>
     public string? AgentFolder { get; init; }
 
+    /// <summary>코드 언어. null이면 창 제목·프로그램으로 감지, 정하면 항상 그 언어로 요청한다.</summary>
+    public string? CodeLanguage { get; init; }
+
     public int IdleTimeoutMinutes { get; init; } = 60;
 
     public int HistoryCapacity { get; init; } = 20;

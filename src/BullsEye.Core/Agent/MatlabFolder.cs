@@ -9,12 +9,16 @@ public static partial class MatlabFolder
     /// "Editor - C:\work\rect.m"(분리한 MATLAB 편집기), "C:\work\rect.m - Notepad++"처럼 제목에 들어 있는
     /// MATLAB 파일 경로의 폴더. 경로가 없으면 null (편집기를 도킹한 MATLAB 본창은 제목에 경로가 없다).
     /// </summary>
-    public static string? FromWindowTitle(string? title)
+    public static string? FromWindowTitle(string? title) =>
+        FilePathIn(title) is { } path ? Path.GetDirectoryName(path) : null;
+
+    /// <summary>제목에 들어 있는 MATLAB 파일의 전체 경로. 없으면 null.</summary>
+    public static string? FilePathIn(string? title)
     {
         if (string.IsNullOrEmpty(title)) return null;
 
         var match = FilePath().Match(title);
-        return match.Success ? Path.GetDirectoryName(match.Groups["path"].Value) : null;
+        return match.Success ? match.Groups["path"].Value : null;
     }
 
     /// <summary>MATLAB 편집기는 저장하지 않은 파일 이름 뒤에 <c>*</c>를 붙인다 ("Editor - C:\work\rect.m*").</summary>

@@ -10,6 +10,7 @@ public sealed class Conversation
         Reply with ONLY the code that should replace the selection.
         No explanations, no markdown, no code fences.
         Match the language, style, and naming of the given code.
+        When a Language is given, write code in that language only (a comment-only selection is still that language).
         """;
 
     private readonly string? _selection;

@@ -17,7 +17,9 @@ public enum AgentStatus
 }
 
 /// <param name="MaxSteps">작업 한 번에 모델에게 보낼 요청 수 상한 (무한 반복·과금 방지).</param>
-public sealed record AgentOptions(string Model, bool DenyDataCollection, ReasoningEffort ReasoningEffort, int MaxSteps = 30);
+/// <param name="Language">작업 폴더의 코드 언어 (설정에서 고정하지 않았으면 MATLAB).</param>
+public sealed record AgentOptions(
+    string Model, bool DenyDataCollection, ReasoningEffort ReasoningEffort, int MaxSteps = 30, string Language = "MATLAB");
 
 /// <summary>에이전트 창에 보여줄 진행 상황.</summary>
 public abstract record AgentEvent;
@@ -43,7 +45,8 @@ public sealed class AgentSession
 
     private const string SystemPromptTemplate =
         """
-        You are a coding agent working on MATLAB code in the user's folder: {0}
+        You are a coding agent working on {1} code in the user's folder: {0}
+        Write {1} code only, even if a file or comment looks like another language.
         You can only touch files inside this folder, using the tools.
 
         Guidelines:
@@ -52,7 +55,7 @@ public sealed class AgentSession
         - Finish the whole task yourself. If it needs new functions or helper files, create them with write_file;
           never tell the user to create files you can create. Each change is shown to the user for approval anyway.
         - Keep the existing style, naming and comment language. Do not change code you were not asked to change.
-        - In MATLAB, a function file's name must match its function name. Put each reusable function in its own
+        - In MATLAB and Octave, a function file's name must match its function name. Put each reusable function in its own
           file (name.m) unless the user asks for local functions in the same file.
         - When reviewing, point out bugs and risky code with file names and line contents; change files only if asked.
         - When finished, reply in Korean with a short summary of what you did and anything the user should check.
@@ -71,7 +74,7 @@ public sealed class AgentSession
         _tools = new AgentTools(workspace, approver, backup);
         _options = options;
         Model = options.Model;
-        _messages = [new ChatMessage(ChatRole.System, string.Format(SystemPromptTemplate, workspace.Root))];
+        _messages = [new ChatMessage(ChatRole.System, string.Format(SystemPromptTemplate, workspace.Root, options.Language))];
     }
 
     public event EventHandler<AgentEvent>? Progress;
