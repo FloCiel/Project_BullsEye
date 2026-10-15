@@ -35,6 +35,7 @@ public static class SettingsSerializer
             Hotkey = settings.Hotkey ?? Defaults.Hotkey,
             QuickHotkey = settings.QuickHotkey ?? Defaults.QuickHotkey,
             History = settings.History ?? Defaults.History,
+            ChatGptModels = settings.ChatGptModels ?? Defaults.ChatGptModels,
             ReasoningEffort = legacyReasoningOff ? ReasoningEffort.Off : settings.ReasoningEffort,
         };
     }

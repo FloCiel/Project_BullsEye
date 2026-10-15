@@ -110,7 +110,7 @@ public sealed class CompletionSession
                         SetState(SessionStatus.Writing, raw.ToString());
                         break;
                     case StreamFailed failed:
-                        SetState(SessionStatus.Failed, raw.ToString(), ErrorMessages.ForStreamFailure(failed.Message));
+                        SetState(SessionStatus.Failed, raw.ToString(), failed.Error ?? ErrorMessages.ForStreamFailure(failed.Message));
                         return;
                 }
             }

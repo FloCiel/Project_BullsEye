@@ -3,10 +3,24 @@ namespace BullsEye.Core;
 /// <summary>USB의 암호화 파일 하나에 저장되는 BullsEye 설정 전체.</summary>
 public sealed record Settings
 {
+    /// <summary>요청을 보낼 AI 서비스.</summary>
+    public ProviderKind Provider { get; init; } = ProviderKind.OpenRouter;
+
+    /// <summary>OpenRouter API 키.</summary>
     public string ApiKey { get; init; } = "";
 
     /// <summary>OpenRouter 모델 ID. 첫 번째가 기본 모델, 팝업에서 Ctrl+Tab으로 순환.</summary>
     public IReadOnlyList<string> FavoriteModels { get; init; } = [];
+
+    /// <summary>"Sign in with ChatGPT" 연결 정보. 한 번도 로그인하지 않았으면 null.</summary>
+    public ChatGptAccount? ChatGpt { get; init; }
+
+    /// <summary>ChatGPT 요금제로 쓸 모델(slug). 순서와 쓰임은 <see cref="FavoriteModels"/>와 같다.</summary>
+    public IReadOnlyList<string> ChatGptModels { get; init; } = [];
+
+    /// <summary>지금 고른 서비스의 즐겨찾기 모델.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<string> ActiveModels => Provider == ProviderKind.ChatGpt ? ChatGptModels : FavoriteModels;
 
     public string Hotkey { get; init; } = "Ctrl+Alt+K";
 
@@ -28,4 +42,14 @@ public sealed record Settings
 
     /// <summary>Ctrl+C 시뮬레이션 후 클립보드 변화를 기다리는 시간.</summary>
     public int SelectionCaptureTimeoutMs { get; init; } = 300;
+}
+
+[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<ProviderKind>))]
+public enum ProviderKind
+{
+    /// <summary>OpenRouter API 키 (크레딧 차감). 여러 회사의 모델.</summary>
+    OpenRouter,
+
+    /// <summary>ChatGPT Plus/Pro 요금제 (Sign in with ChatGPT). OpenAI 모델만.</summary>
+    ChatGpt,
 }

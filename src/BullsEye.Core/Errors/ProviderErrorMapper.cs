@@ -5,11 +5,12 @@ namespace BullsEye.Core;
 /// <summary>provider의 HTTP 실패 응답을 <see cref="ProviderException"/>으로 바꾼다.</summary>
 public static class ProviderErrorMapper
 {
-    public static ProviderException Map(int status, string body)
-    {
-        var message = TryReadErrorMessage(body) ?? $"HTTP {status}";
+    public static ProviderException Map(int status, string body) =>
+        FromStatus(status, TryReadErrorMessage(body) ?? $"HTTP {status}");
 
-        return status switch
+    /// <summary>본문 해석은 provider가 끝냈고 상태 코드로만 나눌 때.</summary>
+    public static ProviderException FromStatus(int status, string message) =>
+        status switch
         {
             401 => new AuthException(message),
             402 => new CreditException(message),
@@ -17,7 +18,6 @@ public static class ProviderErrorMapper
             >= 500 and < 600 => new ProviderUnavailableException(message, isRetryable: status is 502 or 503 or 529),
             _ => new ProviderException(message),
         };
-    }
 
     // OpenRouter: {"error":{"code":402,"message":"..."}}. 그 외 형태는 null.
     private static string? TryReadErrorMessage(string body)

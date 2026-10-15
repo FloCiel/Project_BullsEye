@@ -17,4 +17,5 @@ public sealed record ToolCallDelta(int Index, string? Id, string? Name, string A
 public sealed record Completed : StreamEvent;
 
 /// <summary>스트림 도중 provider가 보낸 에러. 이미 받은 텍스트는 유효하다.</summary>
-public sealed record StreamFailed(string Message) : StreamEvent;
+/// <param name="Error">provider가 사용자 메시지를 정할 수 있으면 (예: ChatGPT 사용 한도). 없으면 일반 문구.</param>
+public sealed record StreamFailed(string Message, UserError? Error = null) : StreamEvent;

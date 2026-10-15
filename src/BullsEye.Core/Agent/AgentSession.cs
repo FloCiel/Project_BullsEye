@@ -171,7 +171,7 @@ public sealed class AgentSession
                     calls[delta.Index] = call;
                     break;
                 case StreamFailed failed:
-                    SetStatus(AgentStatus.Failed, ErrorMessages.ForStreamFailure(failed.Message));
+                    SetStatus(AgentStatus.Failed, failed.Error ?? ErrorMessages.ForStreamFailure(failed.Message));
                     return null;
             }
         }

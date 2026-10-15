@@ -16,6 +16,8 @@ public static class ErrorMessages
 {
     public static UserError For(Exception exception) => exception switch
     {
+        // ChatGPT 오류는 이미 사용자용 메시지와 다음 행동을 들고 있다.
+        ChatGptException e => new(e.Message, e.Action),
         AuthException => new("API 키가 거부되었습니다. 설정에서 키를 확인하세요.", ErrorAction.OpenSettings),
         CreditException => new("OpenRouter 크레딧이 부족합니다. openrouter.ai에서 충전하거나 한도를 확인하세요.", ErrorAction.None),
         RateLimitException => new("요청이 너무 많아 잠시 제한되었습니다. 잠시 후 Enter로 재시도하세요.", ErrorAction.Retry),
