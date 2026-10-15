@@ -34,6 +34,7 @@ public static class SettingsSerializer
             FavoriteModels = settings.FavoriteModels ?? Defaults.FavoriteModels,
             Hotkey = settings.Hotkey ?? Defaults.Hotkey,
             QuickHotkey = settings.QuickHotkey ?? Defaults.QuickHotkey,
+            AgentHotkey = settings.AgentHotkey ?? Defaults.AgentHotkey,
             History = settings.History ?? Defaults.History,
             ChatGptModels = settings.ChatGptModels ?? Defaults.ChatGptModels,
             ReasoningEffort = legacyReasoningOff ? ReasoningEffort.Off : settings.ReasoningEffort,

@@ -49,8 +49,11 @@ public sealed class AgentSession
         Guidelines:
         - Read files before changing them. Use list_files to find the relevant functions.
         - Use edit_file for small changes and write_file for new files or full rewrites.
+        - Finish the whole task yourself. If it needs new functions or helper files, create them with write_file;
+          never tell the user to create files you can create. Each change is shown to the user for approval anyway.
         - Keep the existing style, naming and comment language. Do not change code you were not asked to change.
-        - In MATLAB, a function file's name must match its function name.
+        - In MATLAB, a function file's name must match its function name. Put each reusable function in its own
+          file (name.m) unless the user asks for local functions in the same file.
         - When reviewing, point out bugs and risky code with file names and line contents; change files only if asked.
         - When finished, reply in Korean with a short summary of what you did and anything the user should check.
         """;
@@ -61,11 +64,13 @@ public sealed class AgentSession
     private readonly List<ChatMessage> _messages;
     private CancellationTokenSource? _running;
 
-    public AgentSession(IChatProvider provider, AgentWorkspace workspace, IChangeApprover approver, AgentOptions options)
+    public AgentSession(
+        IChatProvider provider, AgentWorkspace workspace, IChangeApprover approver, AgentOptions options, AgentBackup? backup = null)
     {
         _provider = provider;
-        _tools = new AgentTools(workspace, approver);
+        _tools = new AgentTools(workspace, approver, backup);
         _options = options;
+        Model = options.Model;
         _messages = [new ChatMessage(ChatRole.System, string.Format(SystemPromptTemplate, workspace.Root))];
     }
 
@@ -76,6 +81,9 @@ public sealed class AgentSession
     public UserError? Error { get; private set; }
 
     public bool IsBusy => Status == AgentStatus.Working;
+
+    /// <summary>다음 요청부터 쓸 모델. 작업 사이에 창에서 바꿀 수 있다.</summary>
+    public string Model { get; set; }
 
     /// <summary>지금까지의 대화 (시스템 프롬프트 포함). 테스트·디버그용.</summary>
     public IReadOnlyList<ChatMessage> Messages => _messages;
@@ -148,7 +156,7 @@ public sealed class AgentSession
     private async Task<ChatMessage?> RequestAsync(int step, CancellationToken cancellationToken)
     {
         var request = new ChatRequest(
-            _options.Model, [.. _messages], _options.DenyDataCollection, _options.ReasoningEffort, AgentTools.Definitions);
+            Model, [.. _messages], _options.DenyDataCollection, _options.ReasoningEffort, AgentTools.Definitions);
         var text = new StringBuilder();
         var calls = new SortedDictionary<int, (string? Id, string? Name, StringBuilder Arguments)>();
 

@@ -47,6 +47,8 @@ public class AgentSessionTests : IDisposable
         var second = _provider.Requests[1].Messages;
         Assert.Equal(ChatRole.System, second[0].Role);
         Assert.Contains(_folder.Path, second[0].Content);
+        // 필요한 새 함수 파일은 사용자에게 미루지 말고 직접 만들게 한다 (실사용에서 "직접 만드세요"로 끝난 사례).
+        Assert.Contains("never tell the user to create files you can create", second[0].Content);
         Assert.Equal(new ChatMessage(ChatRole.User, "rect.m 검수해줘"), second[1]);
         Assert.Equal("파일을 볼게요.", second[2].Content);
         Assert.Equal([new ToolCall("call_1", "read_file", "{\"path\":\"rect.m\"}")], second[2].ToolCalls!);

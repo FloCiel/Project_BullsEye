@@ -28,7 +28,8 @@ public sealed record ToolResult(string Content, bool IsError = false);
 /// pi 방식의 최소 도구 모음: 목록 / 읽기 / 정확히 일치하는 부분 바꾸기 / 쓰기.
 /// 명령 실행 도구는 없다 (공용 PC에서 아무 명령이나 돌리지 않게).
 /// </summary>
-public sealed class AgentTools(AgentWorkspace workspace, IChangeApprover approver)
+/// <param name="backup">있으면 승인된 변경을 쓰기 직전에 원본을 복사해 둔다.</param>
+public sealed class AgentTools(AgentWorkspace workspace, IChangeApprover approver, AgentBackup? backup = null)
 {
     public const int MaxListedFiles = 300;
     public const int DefaultReadLines = 2000;
@@ -178,6 +179,7 @@ public sealed class AgentTools(AgentWorkspace workspace, IChangeApprover approve
     private async Task<ToolResult?> ApplyAsync(string path, string? before, string after, CancellationToken cancellationToken)
     {
         var relative = workspace.Relative(workspace.Resolve(path));
+        if (AgentBackup.IsBackupPath(relative)) throw new AgentToolException($"{AgentBackup.FolderName} holds backups and cannot be changed.");
         if (before == after) return new ToolResult($"No change: {relative} already has this content.");
 
         if (!await approver.ApproveAsync(new FileChange(relative, before, after), cancellationToken))
@@ -187,6 +189,7 @@ public sealed class AgentTools(AgentWorkspace workspace, IChangeApprover approve
                 IsError: true);
         }
 
+        backup?.Save(relative);
         workspace.WriteText(path, after);
         return null;
     }

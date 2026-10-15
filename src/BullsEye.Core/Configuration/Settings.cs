@@ -27,6 +27,12 @@ public sealed record Settings
     /// <summary>간소화 모드: 창 없이 선택 영역의 <c>&gt;&gt;</c> 지시 주석으로 바로 요청.</summary>
     public string QuickHotkey { get; init; } = "Ctrl+Alt+J";
 
+    /// <summary>에이전트 창: 작업 폴더의 여러 파일을 검토 · 생성 · 수정.</summary>
+    public string AgentHotkey { get; init; } = "Ctrl+Alt+L";
+
+    /// <summary>마지막으로 에이전트를 돌린 폴더 (MATLAB 창 제목에서 폴더를 못 찾을 때 먼저 제안).</summary>
+    public string? AgentFolder { get; init; }
+
     public int IdleTimeoutMinutes { get; init; } = 60;
 
     public int HistoryCapacity { get; init; } = 20;
