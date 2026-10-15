@@ -98,7 +98,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             _selection,
             _indicator,
             LanguageDetector.Default,
-            (code, language, shape) => new CompletionSession(provider, _clipboard, _history, options, code, language, shape),
+            (code, language, shape, keep) => new CompletionSession(provider, _clipboard, _history, options, code, language, shape, keep),
             TimeSpan.FromMilliseconds(settings.SelectionCaptureTimeoutMs));
 
         RegisterHotkeys();

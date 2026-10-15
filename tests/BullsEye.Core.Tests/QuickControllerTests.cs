@@ -17,7 +17,7 @@ public class QuickControllerTests
         selection,
         _indicator,
         LanguageDetector.Default,
-        (code, lang, shape) => new CompletionSession(_provider, _clipboard, new PromptHistory(10), Options, code, lang, shape),
+        (code, lang, shape, keep) => new CompletionSession(_provider, _clipboard, new PromptHistory(10), Options, code, lang, shape, keep),
         captureTimeout: TimeSpan.FromMilliseconds(300));
 
     [Fact]
@@ -34,8 +34,8 @@ public class QuickControllerTests
         Assert.Contains("for i = 1:n", user);
         Assert.DoesNotContain(">>", user);
 
-        // 지시 줄까지 포함한 선택 영역 전체를 교체한다: 첫 줄 들여쓰기와 끝 줄바꿈을 따른다.
-        Assert.Equal(["    y = x.^2;\r\n"], _clipboard.Writes);
+        // 지시 줄까지 포함한 선택 영역 전체를 교체한다: 첫 줄 들여쓰기와 끝 줄바꿈을 따르고, 지시 줄은 위에 남긴다.
+        Assert.Equal(["    % >> 벡터화해줘\r\n    y = x.^2;\r\n"], _clipboard.Writes);
         Assert.Equal([SessionStatus.Thinking, SessionStatus.Writing, SessionStatus.Done], _indicator.Statuses);
         Assert.Empty(_windows.Restored);
     }
@@ -49,7 +49,25 @@ public class QuickControllerTests
         await controller.OnHotkeyAsync();
 
         Assert.Contains("Nothing is selected", _provider.Requests[0].Messages[^1].Content);
-        Assert.Equal(["function f = fib(n)"], _clipboard.Writes);
+        Assert.Equal(["% >> 피보나치 함수\r\nfunction f = fib(n)"], _clipboard.Writes);
+    }
+
+    [Fact]
+    public async Task OnHotkey_PastedResultWithEditedInstruction_RequestsAgainOnPreviousResult()
+    {
+        _provider.Reply(new TextDelta("y = x.^2;"), new Completed());
+        await Controller(new FakeSelection("% >> 벡터화해줘\nfor i = 1:n\n    y(i) = x(i)^2;\nend\n")).OnHotkeyAsync();
+
+        // 붙여넣은 결과에서 지시만 고쳐 영역째 다시 선택한 상황.
+        var edited = _clipboard.Writes[0].Replace("벡터화해줘", "주석 달아줘");
+        _provider.Reply(new TextDelta("y = x.^2; % 제곱"), new Completed());
+        await Controller(new FakeSelection(edited)).OnHotkeyAsync();
+
+        var user = _provider.Requests[1].Messages[^1].Content;
+        Assert.Contains("Instruction: 주석 달아줘", user);
+        Assert.Contains("y = x.^2;", user);
+        Assert.DoesNotContain(">>", user);
+        Assert.Equal("% >> 주석 달아줘\ny = x.^2; % 제곱\n", _clipboard.Writes[1]);
     }
 
     [Theory]
