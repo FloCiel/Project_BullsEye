@@ -151,3 +151,20 @@ internal sealed class FakeIndicator : IStatusIndicator
 
     public void Show(SessionStatus status, string message) => Shown.Add((status, message));
 }
+
+internal sealed class FakeApprover : IChangeApprover
+{
+    public bool Approve { get; set; } = true;
+
+    /// <summary>true면 취소될 때까지 답하지 않는다 (승인 창이 떠 있는 동안 취소).</summary>
+    public bool Hang { get; set; }
+
+    public List<FileChange> Changes { get; } = [];
+
+    public async Task<bool> ApproveAsync(FileChange change, CancellationToken cancellationToken)
+    {
+        Changes.Add(change);
+        if (Hang) await Task.Delay(Timeout.Infinite, cancellationToken);
+        return Approve;
+    }
+}

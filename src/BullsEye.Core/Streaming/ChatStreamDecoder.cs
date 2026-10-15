@@ -79,6 +79,30 @@ public sealed class ChatStreamDecoder
         {
             events.Add(new TextDelta(content));
         }
+
+        if (delta.TryGetProperty("tool_calls", out var toolCalls) && toolCalls.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var call in toolCalls.EnumerateArray())
+            {
+                DecodeToolCall(call, events);
+            }
+        }
+    }
+
+    private static void DecodeToolCall(JsonElement call, List<StreamEvent> events)
+    {
+        if (call.ValueKind != JsonValueKind.Object) return;
+
+        var index = call.TryGetProperty("index", out var i) && i.TryGetInt32(out var n) ? n : 0;
+        string? name = null;
+        var arguments = "";
+        if (call.TryGetProperty("function", out var function) && function.ValueKind == JsonValueKind.Object)
+        {
+            name = ReadString(function, "name");
+            arguments = ReadString(function, "arguments") ?? "";
+        }
+
+        events.Add(new ToolCallDelta(index, ReadString(call, "id"), name, arguments));
     }
 
     private static string ReadErrorMessage(JsonElement error) =>

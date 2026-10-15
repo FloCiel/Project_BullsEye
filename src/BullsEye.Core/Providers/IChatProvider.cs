@@ -9,8 +9,10 @@ public interface IChatProvider
     IAsyncEnumerable<StreamEvent> StreamAsync(ChatRequest request, CancellationToken cancellationToken = default);
 }
 
+/// <param name="Tools">모델이 부를 수 있는 도구 (에이전트 모드). null이면 도구 없이 보낸다.</param>
 public sealed record ChatRequest(
     string Model,
     IReadOnlyList<ChatMessage> Messages,
     bool DenyDataCollection,
-    ReasoningEffort ReasoningEffort);
+    ReasoningEffort ReasoningEffort,
+    IReadOnlyList<ToolDefinition>? Tools = null);
