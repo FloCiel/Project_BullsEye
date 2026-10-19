@@ -16,8 +16,9 @@ public sealed class QuickController(
     ISelectionCapture selection,
     IStatusIndicator indicator,
     LanguageDetector languages,
-    Func<string?, string?, SelectionShape, IReadOnlyList<string>, CompletionSession> createSession,
-    TimeSpan captureTimeout)
+    Func<string?, string?, SelectionShape, Func<string, string>, CompletionSession> createSession,
+    TimeSpan captureTimeout,
+    bool keepMarker = false)
 {
     public const string NoSelectionMessage = "선택된 코드가 없습니다. 지시 주석(예: % >> 벡터화해줘)까지 함께 선택하세요.";
     public const string NoInstructionMessage = "선택 영역에 지시 주석이 없습니다. 예: % >> 벡터화해줘";
@@ -67,8 +68,10 @@ public sealed class QuickController(
 
         var language = languages.Detect(window.ProcessName, window.Title);
         // 들여쓰기·줄바꿈은 지시 줄을 포함한 원래 선택 영역 기준: 붙여넣으면 그 영역 전체가 바뀐다.
-        // 지시 줄은 결과 위에 다시 붙여 남긴다 → 고쳐서 영역째 다시 선택하면 재요청된다.
-        var session = createSession(inline.Code, language, SelectionShape.From(text), inline.Lines);
+        // 지시 줄은 결과의 원래 자리(위/아래)에 다시 붙인다. keepMarker면 >>를 남겨 고쳐서 재요청할 수 있고,
+        // 아니면 일반 주석으로 바꿔 남긴다.
+        var shape = SelectionShape.From(text);
+        var session = createSession(inline.Code, language, shape, code => inline.Surround(code, shape.LineEnding, keepMarker));
         var last = SessionStatus.Ready;
         session.Changed += (_, _) =>
         {

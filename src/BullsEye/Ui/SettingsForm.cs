@@ -55,6 +55,7 @@ internal sealed class SettingsForm : Form
     private readonly Label _catalogStatus = new() { AutoSize = true };
     private readonly TextBox _hotkey = new() { AccessibleName = "단축키" };
     private readonly TextBox _quickHotkey = new() { AccessibleName = "간소화 단축키" };
+    private readonly CheckBox _keepMarker = new() { Text = "결과에 '>>' 지시 줄 그대로 남기기 (끄면 일반 주석으로)", AutoSize = true };
     private readonly TextBox _agentHotkey = new() { AccessibleName = "에이전트 단축키" };
     private static readonly (ReasoningEffort Effort, string Label)[] ReasoningChoices =
     [
@@ -199,6 +200,7 @@ internal sealed class SettingsForm : Form
         Section("동작");
         Row("팝업 단축키", Stack(_hotkey, Hint("팝업 창에 지시. 예: Ctrl+Alt+K")));
         Row("간소화 단축키", Stack(_quickHotkey, Hint("'% >> 지시' 주석과 코드를 선택하고 누름 → 구석 점이 초록이면 Ctrl+V.")));
+        Row("", _keepMarker);
         Row("에이전트 단축키", Stack(_agentHotkey, Hint("누르면 에이전트 창. '% >> 지시'를 선택하고 누르면 창 없이 적용 (원본은 USB의 BullsEye-backup).")));
         _language.Items.Add(AutoLanguage);
         _language.Items.AddRange(LanguageDetector.Choices.Select(c => (object)c).ToArray());
@@ -304,6 +306,7 @@ internal sealed class SettingsForm : Form
         UpdateChatGptStatus();
         _hotkey.Text = _settings.Hotkey;
         _quickHotkey.Text = _settings.QuickHotkey;
+        _keepMarker.Checked = _settings.KeepInstructionMarker;
         _agentHotkey.Text = _settings.AgentHotkey;
         _language.SelectedIndex = Math.Max(0, _language.Items.IndexOf(_settings.CodeLanguage ?? AutoLanguage));
         _reasoning.SelectedIndex = Math.Max(0, Array.FindIndex(ReasoningChoices, c => c.Effort == _settings.ReasoningEffort));
@@ -449,6 +452,7 @@ internal sealed class SettingsForm : Form
             CodeLanguage = _language.SelectedItem is string language && language != AutoLanguage ? language : null,
             ReasoningEffort = ReasoningChoices[Math.Max(0, _reasoning.SelectedIndex)].Effort,
             DenyDataCollection = _denyCollection.Checked,
+            KeepInstructionMarker = _keepMarker.Checked,
             IdleTimeoutMinutes = (int)_idleMinutes.Value,
             HistoryCapacity = (int)_historyCapacity.Value,
             History = _settings.History.Take((int)_historyCapacity.Value).ToList(),

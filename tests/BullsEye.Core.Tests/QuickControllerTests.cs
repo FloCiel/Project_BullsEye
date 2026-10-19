@@ -12,13 +12,14 @@ public class QuickControllerTests
     private readonly FakeIndicator _indicator = new();
     private readonly FakeWindows _windows = new(Matlab);
 
-    private QuickController Controller(FakeSelection selection) => new(
+    private QuickController Controller(FakeSelection selection, bool keepMarker = false) => new(
         _windows,
         selection,
         _indicator,
         LanguageDetector.Default,
-        (code, lang, shape, keep) => new CompletionSession(_provider, _clipboard, new PromptHistory(10), Options, code, lang, shape, keep),
-        captureTimeout: TimeSpan.FromMilliseconds(300));
+        (code, lang, shape, decorate) => new CompletionSession(_provider, _clipboard, new PromptHistory(10), Options, code, lang, shape, decorate),
+        captureTimeout: TimeSpan.FromMilliseconds(300),
+        keepMarker);
 
     [Fact]
     public async Task OnHotkey_SendsInstructionSeparately_AndCopiesResultShapedLikeWholeSelection()
@@ -34,8 +35,8 @@ public class QuickControllerTests
         Assert.Contains("for i = 1:n", user);
         Assert.DoesNotContain(">>", user);
 
-        // 지시 줄까지 포함한 선택 영역 전체를 교체한다: 첫 줄 들여쓰기와 끝 줄바꿈을 따르고, 지시 줄은 위에 남긴다.
-        Assert.Equal(["    % >> 벡터화해줘\r\n    y = x.^2;\r\n"], _clipboard.Writes);
+        // 지시 줄까지 포함한 선택 영역 전체를 교체한다: 첫 줄 들여쓰기와 끝 줄바꿈을 따르고, 지시 줄은 일반 주석으로 위에 남긴다.
+        Assert.Equal(["    % 벡터화해줘\r\n    y = x.^2;\r\n"], _clipboard.Writes);
         Assert.Equal([SessionStatus.Thinking, SessionStatus.Writing, SessionStatus.Done], _indicator.Statuses);
         Assert.Empty(_windows.Restored);
     }
@@ -49,19 +50,41 @@ public class QuickControllerTests
         await controller.OnHotkeyAsync();
 
         Assert.Contains("Nothing is selected", _provider.Requests[0].Messages[^1].Content);
-        Assert.Equal(["% >> 피보나치 함수\r\nfunction f = fib(n)"], _clipboard.Writes);
+        Assert.Equal(["% 피보나치 함수\r\nfunction f = fib(n)"], _clipboard.Writes);
+    }
+
+    [Fact]
+    public async Task OnHotkey_InstructionBelowCode_StaysBelowResult()
+    {
+        _provider.Reply(new TextDelta("y = x.^2;"), new Completed());
+        var controller = Controller(new FakeSelection("for i = 1:n\r\n    y(i) = x(i)^2;\r\nend\r\n% >> 벡터화해줘\r\n"));
+
+        await controller.OnHotkeyAsync();
+
+        Assert.Equal(["y = x.^2;\r\n% 벡터화해줘\r\n"], _clipboard.Writes);
+    }
+
+    [Fact]
+    public async Task OnHotkey_KeepMarker_LeavesInstructionLineAsIs()
+    {
+        _provider.Reply(new TextDelta("y = x.^2;"), new Completed());
+        var controller = Controller(new FakeSelection("% >> 벡터화해줘\nfor i = 1:n\nend\n"), keepMarker: true);
+
+        await controller.OnHotkeyAsync();
+
+        Assert.Equal(["% >> 벡터화해줘\ny = x.^2;\n"], _clipboard.Writes);
     }
 
     [Fact]
     public async Task OnHotkey_PastedResultWithEditedInstruction_RequestsAgainOnPreviousResult()
     {
         _provider.Reply(new TextDelta("y = x.^2;"), new Completed());
-        await Controller(new FakeSelection("% >> 벡터화해줘\nfor i = 1:n\n    y(i) = x(i)^2;\nend\n")).OnHotkeyAsync();
+        await Controller(new FakeSelection("% >> 벡터화해줘\nfor i = 1:n\n    y(i) = x(i)^2;\nend\n"), keepMarker: true).OnHotkeyAsync();
 
         // 붙여넣은 결과에서 지시만 고쳐 영역째 다시 선택한 상황.
         var edited = _clipboard.Writes[0].Replace("벡터화해줘", "주석 달아줘");
         _provider.Reply(new TextDelta("y = x.^2; % 제곱"), new Completed());
-        await Controller(new FakeSelection(edited)).OnHotkeyAsync();
+        await Controller(new FakeSelection(edited), keepMarker: true).OnHotkeyAsync();
 
         var user = _provider.Requests[1].Messages[^1].Content;
         Assert.Contains("Instruction: 주석 달아줘", user);

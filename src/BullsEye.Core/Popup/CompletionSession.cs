@@ -33,7 +33,7 @@ public sealed class CompletionSession
     private readonly PromptHistory _history;
     private readonly SessionOptions _options;
     private readonly SelectionShape _shape;
-    private readonly IReadOnlyList<string> _keepLines;
+    private readonly Func<string, string> _decorate;
     private readonly Conversation _conversation;
     private int _modelIndex;
     private bool _hasAsked;
@@ -47,14 +47,14 @@ public sealed class CompletionSession
         string? selection,
         string? language,
         SelectionShape? shape = null,
-        IReadOnlyList<string>? keepLines = null)
+        Func<string, string>? decorate = null)
     {
         _provider = provider;
         _clipboard = clipboard;
         _history = history;
         _options = options;
         _shape = shape ?? (string.IsNullOrEmpty(selection) ? SelectionShape.None : SelectionShape.From(selection));
-        _keepLines = keepLines ?? [];
+        _decorate = decorate ?? (code => code);
         _conversation = Conversation.Start(selection, language);
     }
 
@@ -132,18 +132,13 @@ public sealed class CompletionSession
 
         var code = ResponseFormatter.Format(raw.ToString(), _shape);
         _conversation.RecordResult(code);
-        var output = KeepLinesAbove(code);
+        var output = _decorate(code);
         _clipboard.SetText(output);
         SetState(SessionStatus.Done, output);
     }
 
     /// <summary>진행 중인 요청을 멈춘다 (팝업의 Esc). 받은 부분은 남고 클립보드는 그대로.</summary>
     public void Cancel() => _running?.Cancel();
-
-    /// <summary>간소화 모드의 지시 주석 줄을 결과 위에 그대로 남긴다 (붙여넣은 뒤 고쳐서 다시 요청할 수 있게).</summary>
-    private string KeepLinesAbove(string code) => _keepLines.Count == 0
-        ? code
-        : string.Join(_shape.LineEnding, _keepLines) + _shape.LineEnding + code;
 
     private void SetState(SessionStatus status, string output, UserError? error = null)
     {

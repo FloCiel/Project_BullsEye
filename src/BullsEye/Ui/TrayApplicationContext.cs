@@ -113,8 +113,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
             _selection,
             _indicator,
             languages,
-            (code, language, shape, keep) => new CompletionSession(provider, _clipboard, _history, options, code, language, shape, keep),
-            TimeSpan.FromMilliseconds(settings.SelectionCaptureTimeoutMs));
+            (code, language, shape, decorate) => new CompletionSession(provider, _clipboard, _history, options, code, language, shape, decorate),
+            TimeSpan.FromMilliseconds(settings.SelectionCaptureTimeoutMs),
+            settings.KeepInstructionMarker);
 
         _quickAgent = new QuickAgentController(
             _windows,

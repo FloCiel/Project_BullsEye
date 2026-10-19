@@ -49,4 +49,34 @@ public class InlineInstructionTests
     {
         Assert.Null(InlineInstruction.Parse(selection));
     }
+
+    [Fact]
+    public void Parse_SplitsInstructionLinesAboveAndBelowCode()
+    {
+        var parsed = InlineInstruction.Parse("% >> 위\nx = 1;\n% >> 사이\ny = 2;\n\n% >> 아래\n");
+
+        Assert.NotNull(parsed);
+        Assert.Equal(["% >> 위", "% >> 사이"], parsed.Above);
+        Assert.Equal(["% >> 아래"], parsed.Below);
+    }
+
+    [Theory]
+    [InlineData("% >> 벡터화해줘", "% 벡터화해줘")]
+    [InlineData("    // >>null 체크", "    // null 체크")]
+    [InlineData("/* >> 벡터화해줘 */", "/* 벡터화해줘 */")]
+    [InlineData("REM >> 정리", "REM 정리")]
+    public void ToPlainComment_RemovesMarker(string line, string expected)
+    {
+        Assert.Equal(expected, InlineInstruction.ToPlainComment(line));
+    }
+
+    [Fact]
+    public void Surround_PutsLinesBackWhereTheyWere_AndDropsEmptyInstructions()
+    {
+        var parsed = InlineInstruction.Parse("% >> 위\n% >>\nx = 1;\n% >> 아래\n");
+
+        Assert.NotNull(parsed);
+        Assert.Equal("% 위\ny = 2;\n% 아래\n", parsed.Surround("y = 2;\n", "\n", keepMarker: false));
+        Assert.Equal("% >> 위\n% >>\ny = 2;\n% >> 아래\n", parsed.Surround("y = 2;\n", "\n", keepMarker: true));
+    }
 }

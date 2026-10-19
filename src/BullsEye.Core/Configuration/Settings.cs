@@ -27,6 +27,12 @@ public sealed record Settings
     /// <summary>간소화 모드: 창 없이 선택 영역의 <c>&gt;&gt;</c> 지시 주석으로 바로 요청.</summary>
     public string QuickHotkey { get; init; } = "Ctrl+Alt+J";
 
+    /// <summary>
+    /// 간소화 모드 결과에 지시 줄을 <c>&gt;&gt;</c> 그대로 남길지. 끄면(기본) <c>% 벡터화해줘</c> 같은 일반 주석이 된다.
+    /// 켜면 그 줄을 고쳐서 영역째 다시 선택해 바로 재요청할 수 있다.
+    /// </summary>
+    public bool KeepInstructionMarker { get; init; }
+
     /// <summary>에이전트 창: 작업 폴더의 여러 파일을 검토 · 생성 · 수정.</summary>
     public string AgentHotkey { get; init; } = "Ctrl+Alt+L";
 
