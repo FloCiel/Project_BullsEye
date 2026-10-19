@@ -29,6 +29,16 @@ public class AgentToolsTests : IDisposable
     }
 
     [Fact]
+    public async Task ListAndSearch_BlankPathOrPattern_UseDefaults()
+    {
+        _folder.File("a.m", "x = 1;\n");
+
+        // 실사용에서 모델이 path: "" 를 보내 "Path is empty"로 실패한 사례.
+        Assert.Equal("a.m", (await Run("list_files", """{"path":"","pattern":" "}""")).Content);
+        Assert.Equal("a.m:1: x = 1;", (await Run("search_files", """{"query":"x","path":"","pattern":""}""")).Content);
+    }
+
+    [Fact]
     public async Task ReadFile_ReturnsContent_AndPagesLongFiles()
     {
         _folder.File("a.m", "l1\r\nl2\r\nl3\r\nl4");

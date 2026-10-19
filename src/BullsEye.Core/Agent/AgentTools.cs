@@ -96,8 +96,8 @@ public sealed class AgentTools(AgentWorkspace workspace, IChangeApprover approve
             var args = ParseArguments(call.Arguments);
             return call.Name switch
             {
-                "list_files" => List(Optional(args, "path") ?? ".", Optional(args, "pattern") ?? "*"),
-                "search_files" => Search(Required(args, "query"), OptionalBool(args, "regex") ?? false, Optional(args, "path") ?? ".", Optional(args, "pattern") ?? "*"),
+                "list_files" => List(OrDefault(args, "path", "."), OrDefault(args, "pattern", "*")),
+                "search_files" => Search(Required(args, "query"), OptionalBool(args, "regex") ?? false, OrDefault(args, "path", "."), OrDefault(args, "pattern", "*")),
                 "read_file" => Read(Required(args, "path"), OptionalInt(args, "offset") ?? 1, OptionalInt(args, "limit") ?? DefaultReadLines),
                 "edit_file" => await EditAsync(Required(args, "path"), Required(args, "old_text"), Required(args, "new_text"), cancellationToken),
                 "write_file" => await WriteAsync(Required(args, "path"), Required(args, "content"), cancellationToken),
@@ -283,6 +283,10 @@ public sealed class AgentTools(AgentWorkspace workspace, IChangeApprover approve
 
     private static string Required(JsonElement args, string name) =>
         Optional(args, name) ?? throw new AgentToolException($"Missing required argument: {name}");
+
+    /// <summary>모델이 기본값 대신 빈 문자열을 보내는 경우가 흔하다 (path: "").</summary>
+    private static string OrDefault(JsonElement args, string name, string fallback) =>
+        Optional(args, name) is { } value && !string.IsNullOrWhiteSpace(value) ? value : fallback;
 
     private static string? Optional(JsonElement args, string name) =>
         args.TryGetProperty(name, out var value) && value.ValueKind != JsonValueKind.Null
