@@ -18,7 +18,7 @@ public class QuickAgentControllerTests : IDisposable
         _usb.Dispose();
     }
 
-    private QuickAgentController Create(string title, string? selection, IChatProvider? provider = null)
+    private QuickAgentController Create(string title, string? selection, IChatProvider? provider = null, bool keepMarker = false)
     {
         var controller = new QuickAgentController(
             new FakeWindows(new ForegroundWindow(1, "MATLAB.exe", title)),
@@ -36,7 +36,8 @@ public class QuickAgentControllerTests : IDisposable
                 return (session, backup);
             },
             () => _lastFolder,
-            TimeSpan.FromMilliseconds(10));
+            TimeSpan.FromMilliseconds(10),
+            keepMarker);
         controller.Finished += (_, report) => _reports.Add(report);
         return controller;
     }
@@ -46,15 +47,15 @@ public class QuickAgentControllerTests : IDisposable
     private string Content(string file = "rect.m") => File.ReadAllText(Path.Combine(_folder.Path, file));
 
     [Fact]
-    public async Task InstructionComment_RunsWithoutWindow_AutoAppliesAndBacksUp()
+    public async Task InstructionComment_RunsWithoutWindow_AutoAppliesBacksUpAndTurnsMarkerIntoComment()
     {
         _folder.File("rect.m", "% >> 검토해줘\r\nfunction a = rect(w, h)\r\na = w * h;\r\nend\r\n");
 
         var (handled, _) = await Create(Title(), "% >> 검토해줘").OnHotkeyAsync();
 
         Assert.True(handled);
-        // mock은 첫 줄 아래에 주석을 넣는다.
-        Assert.Equal($"% >> 검토해줘\r\n{MockProvider.MockComment}\r\nfunction a = rect(w, h)\r\na = w * h;\r\nend\r\n", Content());
+        // mock은 첫 줄 아래에 주석을 넣는다. 끝난 뒤 지시 줄은 일반 주석이 된다 (간소화 모드와 같다).
+        Assert.Equal($"% 검토해줘\r\n{MockProvider.MockComment}\r\nfunction a = rect(w, h)\r\na = w * h;\r\nend\r\n", Content());
         var report = Assert.Single(_reports);
         Assert.Equal(AgentStatus.Done, report.Status);
         Assert.Equal(["rect.m"], report.ChangedFiles);
@@ -69,6 +70,16 @@ public class QuickAgentControllerTests : IDisposable
         Assert.StartsWith("% BullsEye 에이전트 — 바뀐 파일: rect.m\r\n", pasted);
         Assert.Contains("% mock 작업을 마쳤습니다.\r\n", pasted);
         Assert.All(pasted.TrimEnd().Split("\r\n"), line => Assert.StartsWith("%", line));
+    }
+
+    [Fact]
+    public async Task KeepMarker_LeavesInstructionLineInFile()
+    {
+        _folder.File("rect.m", "% >> 검토해줘\nx = 1;\n");
+
+        await Create(Title(), "% >> 검토해줘", keepMarker: true).OnHotkeyAsync();
+
+        Assert.StartsWith("% >> 검토해줘\n", Content());
     }
 
     [Fact]
@@ -171,8 +182,26 @@ public class QuickAgentControllerTests : IDisposable
 
         Assert.StartsWith("계산기 만들어줘", text);
         Assert.Contains("written in test.m. The selection is lines 3-4 of that file", text);
+        Assert.Contains("Line 3 of test.m is the instruction comment", text);
         Assert.Contains("x = 1;", text);
         Assert.Contains("Do not ask", text);
+    }
+
+    [Fact]
+    public void CleanUp_FindsMovedInstructionLine_AndDropsEmptyOne()
+    {
+        _folder.File("rect.m", "a = 1;\nb = 2;\n% >> 고쳐줘\n% >>\n");
+        var location = new SelectionLocation(_folder.Path, "rect.m", 1, 2, [(1, "% >> 고쳐줘"), (2, "% >>")]);
+        var backup = new AgentBackup(new AgentWorkspace(_folder.Path), _usb.Path, DateTimeOffset.Now);
+
+        QuickAgentController.CleanUpInstructions(location, backup);
+
+        Assert.Equal("a = 1;\nb = 2;\n% 고쳐줘\n", Content());
+        Assert.Equal(1, backup.Count);
+
+        // 에이전트가 파일을 지웠으면 조용히 넘어간다.
+        File.Delete(Path.Combine(_folder.Path, "rect.m"));
+        QuickAgentController.CleanUpInstructions(location, backup);
     }
 }
 

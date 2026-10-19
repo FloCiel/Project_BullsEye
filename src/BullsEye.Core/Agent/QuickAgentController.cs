@@ -56,6 +56,7 @@ public sealed class AutoApprover : IChangeApprover
 /// </summary>
 /// <param name="createSession">작업 폴더와 승인자로 세션을 만든다 (백업 폴더도 이때 정해진다).</param>
 /// <param name="fallbackFolder">창 제목에 경로가 없을 때 선택 내용을 찾아볼 폴더 (지난번 폴더). 없으면 null.</param>
+/// <param name="keepMarker">끝난 뒤 파일의 <c>&gt;&gt;</c> 지시 줄을 그대로 둘지 (간소화 모드와 같은 설정). 아니면 일반 주석으로 바꾼다.</param>
 public sealed class QuickAgentController(
     IForegroundWindowProbe windows,
     ISelectionCapture selection,
@@ -64,7 +65,8 @@ public sealed class QuickAgentController(
     LanguageDetector languages,
     Func<string, IChangeApprover, (AgentSession Session, AgentBackup Backup)> createSession,
     Func<string?> fallbackFolder,
-    TimeSpan captureTimeout)
+    TimeSpan captureTimeout,
+    bool keepMarker = false)
 {
     public const string NoFolderMessage = "작업 폴더를 찾지 못했습니다. 선택 없이 단축키를 눌러 에이전트 창에서 폴더를 고르세요.";
     public const string UnsavedMessage = "편집기에 저장하지 않은 변경이 있습니다. 저장(Ctrl+S)한 뒤 다시 누르세요.";
@@ -132,6 +134,14 @@ public sealed class QuickAgentController(
         parts.Add(location.FirstLine is { } first
             ? $"(The instruction was written in {location.File}. The selection is lines {first}-{location.LastLine} of that file; \"here\" means that place.)"
             : $"(The instruction was written in {location.File}.)");
+        if (location.InstructionLines.Count > 0)
+        {
+            var lines = string.Join(", ", location.InstructionLines.Select(l => l.Line));
+            parts.Add(location.InstructionLines.Count == 1
+                ? $"(Line {lines} of {location.File} is the instruction comment. The app takes care of it after you finish: leave it exactly as it is.)"
+                : $"(Lines {lines} of {location.File} are the instruction comments. The app takes care of them after you finish: leave them exactly as they are.)");
+        }
+
         if (inline.Code is not null)
         {
             parts.Add("Selected code:");
@@ -171,6 +181,8 @@ public sealed class QuickAgentController(
             _running = null;
         }
 
+        if (session.Status == AgentStatus.Done && !keepMarker) CleanUpInstructions(location, backup);
+
         var reply = session.Messages.LastOrDefault(m => m.Role == ChatRole.Assistant)?.Content ?? "";
         var changed = approver.ChangedFiles;
         var report = new QuickAgentReport(session.Status, changed, reply, backup.Count > 0 ? backup.Folder : null);
@@ -192,6 +204,42 @@ public sealed class QuickAgentController(
         };
         indicator.Show(status, message);
         Finished?.Invoke(this, report);
+    }
+
+    /// <summary>
+    /// 끝난 뒤 파일에 남은 <c>&gt;&gt;</c> 지시 줄을 일반 주석으로 바꾼다 (내용이 빈 지시 줄은 지운다).
+    /// 모델이 지웠거나 옮겼으면 같은 원문의 가장 가까운 줄을 찾고, 없으면 건드리지 않는다. 실패해도 작업 결과에는 영향이 없다.
+    /// </summary>
+    internal static void CleanUpInstructions(SelectionLocation location, AgentBackup backup)
+    {
+        if (location.InstructionLines.Count == 0) return;
+
+        try
+        {
+            var workspace = new AgentWorkspace(location.Folder);
+            var lines = workspace.ReadText(location.File).Split('\n').ToList();
+            var used = new HashSet<int>();
+            var removed = new List<int>();
+            foreach (var (line, text) in location.InstructionLines)
+            {
+                var candidates = Enumerable.Range(0, lines.Count).Where(i => !used.Contains(i) && lines[i] == text).ToList();
+                if (candidates.Count == 0) continue;
+
+                var index = candidates.MinBy(i => Math.Abs(i - (line - 1)));
+                used.Add(index);
+                if (InlineInstruction.ToPlainComment(text) is { } plain) lines[index] = plain;
+                else removed.Add(index);
+            }
+
+            if (used.Count == 0) return;
+            foreach (var index in removed.OrderDescending()) lines.RemoveAt(index);
+            backup.Save(location.File);
+            workspace.WriteText(location.File, string.Join("\n", lines));
+        }
+        catch (Exception ex) when (ex is AgentToolException or IOException or UnauthorizedAccessException)
+        {
+            // 에이전트가 파일을 지웠거나 쓸 수 없으면 그대로 둔다.
+        }
     }
 
     private static string? Existing(string? folder) => folder is not null && Directory.Exists(folder) ? folder : null;

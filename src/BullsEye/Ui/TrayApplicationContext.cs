@@ -133,7 +133,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 return (new AgentSession(provider, workspace, approver, AgentOptionsFor(settings), backup, log), backup);
             },
             () => _settings.AgentFolder,
-            TimeSpan.FromMilliseconds(settings.SelectionCaptureTimeoutMs));
+            TimeSpan.FromMilliseconds(settings.SelectionCaptureTimeoutMs),
+            settings.KeepInstructionMarker);
 
         RegisterHotkeys();
     }

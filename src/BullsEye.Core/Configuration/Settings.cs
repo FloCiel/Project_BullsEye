@@ -28,8 +28,8 @@ public sealed record Settings
     public string QuickHotkey { get; init; } = "Ctrl+Alt+J";
 
     /// <summary>
-    /// 간소화 모드 결과에 지시 줄을 <c>&gt;&gt;</c> 그대로 남길지. 끄면(기본) <c>% 벡터화해줘</c> 같은 일반 주석이 된다.
-    /// 켜면 그 줄을 고쳐서 영역째 다시 선택해 바로 재요청할 수 있다.
+    /// 간소화 모드 결과와 창 없는 에이전트가 끝난 파일에 지시 줄을 <c>&gt;&gt;</c> 그대로 남길지.
+    /// 끄면(기본) <c>% 벡터화해줘</c> 같은 일반 주석이 된다. 켜면 그 줄을 고쳐서 영역째 다시 선택해 바로 재요청할 수 있다.
     /// </summary>
     public bool KeepInstructionMarker { get; init; }
 
