@@ -211,4 +211,33 @@ public class AgentSessionTests : IDisposable
         Assert.Contains("unless the user asks for a new function file", system);
     }
 
+    [Fact]
+    public async Task Run_WithLog_RecordsInstructionToolsAndReply_WithoutCode()
+    {
+        using var logs = new TempFolder();
+        _folder.File("rect.m", "A = w*h;\n");
+        _provider
+            .Reply(Call("call_1", "read_file", "{\"path\":\"rect.m\"}"), new Completed())
+            .Reply(Call("call_2", "edit_file", "{\"path\":\"rect.m\",\"old_text\":\"없는 텍스트\",\"new_text\":\"B = 1;\"}"), new Completed())
+            .Reply(new TextDelta("이름을 바꿨습니다."), new Completed());
+        var log = new AgentLog(_folder.Path, logs.Path, new DateTimeOffset(2026, 10, 19, 21, 45, 41, TimeSpan.FromHours(9)));
+        var session = new AgentSession(
+            _provider, new AgentWorkspace(_folder.Path), _approver, new AgentOptions("vendor/model", true, ReasoningEffort.Medium), log: log);
+
+        await session.RunAsync("이름 바꿔줘\nSelected code:\n```\nSECRET_CODE = 1;\n```");
+
+        Assert.Equal(logs.Path, Path.GetDirectoryName(log.FilePath));
+        Assert.StartsWith("20261019-214541 ", Path.GetFileName(log.FilePath));
+        var text = File.ReadAllText(log.FilePath);
+        Assert.Contains("── 지시 (vendor/model)", text);
+        Assert.Contains("이름 바꿔줘", text);
+        Assert.Contains("read_file rect.m → 성공", text);
+        Assert.Contains("edit_file rect.m → 실패: ", text);
+        Assert.Contains("── 끝: Done", text);
+        Assert.Contains("이름을 바꿨습니다.", text);
+        // 파일 내용 · 바꾼 텍스트 · 선택한 코드는 남기지 않는다.
+        Assert.DoesNotContain("A = w*h;", text);
+        Assert.DoesNotContain("B = 1;", text);
+        Assert.DoesNotContain("SECRET_CODE", text);
+    }
 }

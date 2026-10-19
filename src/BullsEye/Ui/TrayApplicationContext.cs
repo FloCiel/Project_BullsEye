@@ -127,8 +127,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
             {
                 RememberAgentFolder(folder);
                 var workspace = new AgentWorkspace(folder);
-                var backup = new AgentBackup(workspace, BackupRoot, DateTimeOffset.Now);
-                return (new AgentSession(provider, workspace, approver, AgentOptionsFor(settings), backup), backup);
+                var startedAt = DateTimeOffset.Now;
+                var backup = new AgentBackup(workspace, BackupRoot, startedAt);
+                var log = new AgentLog(workspace.Root, LogRoot, startedAt);
+                return (new AgentSession(provider, workspace, approver, AgentOptionsFor(settings), backup, log), backup);
             },
             () => _settings.AgentFolder,
             TimeSpan.FromMilliseconds(settings.SelectionCaptureTimeoutMs));
@@ -138,6 +140,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     /// <summary>에이전트 백업은 작업 폴더(학교 PC일 수 있음)가 아니라 USB의 exe 옆에 둔다.</summary>
     private static string BackupRoot => Path.Combine(AppContext.BaseDirectory, AgentBackup.FolderName);
+
+    /// <summary>에이전트 실행 로그도 백업처럼 exe 옆에 둔다.</summary>
+    private static string LogRoot => Path.Combine(AppContext.BaseDirectory, AgentLog.FolderName);
 
     private static AgentOptions AgentOptionsFor(Settings settings) => new(
         settings.ActiveModels[0], settings.DenyDataCollection, settings.ReasoningEffort, Language: settings.CodeLanguage ?? "MATLAB");
@@ -295,7 +300,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         var folder = Existing(MatlabFolder.FromWindowTitle(windowTitle)) ?? Existing(_settings.AgentFolder) ?? PickFolder(null);
         if (folder is null) return;
 
-        var form = new AgentForm(_provider, AgentOptionsFor(_settings), models, folder, OpenSettings, PickFolder, BackupRoot);
+        var form = new AgentForm(_provider, AgentOptionsFor(_settings), models, folder, OpenSettings, PickFolder, BackupRoot, LogRoot);
         form.FolderChanged += (_, picked) => RememberAgentFolder(picked);
         form.FormClosed += (_, _) =>
         {

@@ -35,7 +35,8 @@ internal static class Program
                 args[1],
                 () => { },
                 _ => null,
-                Path.Combine(AppContext.BaseDirectory, AgentBackup.FolderName)));
+                Path.Combine(AppContext.BaseDirectory, AgentBackup.FolderName),
+                Path.Combine(AppContext.BaseDirectory, AgentLog.FolderName)));
             return;
         }
 #endif

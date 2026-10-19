@@ -69,14 +69,16 @@ public sealed class AgentSession
     private readonly AgentTools _tools;
     private readonly AgentOptions _options;
     private readonly List<ChatMessage> _messages;
+    private readonly AgentLog? _log;
     private CancellationTokenSource? _running;
 
     public AgentSession(
-        IChatProvider provider, AgentWorkspace workspace, IChangeApprover approver, AgentOptions options, AgentBackup? backup = null)
+        IChatProvider provider, AgentWorkspace workspace, IChangeApprover approver, AgentOptions options, AgentBackup? backup = null, AgentLog? log = null)
     {
         _provider = provider;
         _tools = new AgentTools(workspace, approver, backup);
         _options = options;
+        _log = log;
         Model = options.Model;
         _messages = [new ChatMessage(ChatRole.System, string.Format(SystemPromptTemplate, workspace.Root, options.Language))];
     }
@@ -111,6 +113,8 @@ public sealed class AgentSession
             _messages.Add(new ChatMessage(ChatRole.User, instruction));
         }
 
+        _log?.Instruction(string.IsNullOrWhiteSpace(instruction) ? "(이어 하기)" : instruction, Model);
+
         using var running = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _running = running;
         SetStatus(AgentStatus.Working);
@@ -134,6 +138,7 @@ public sealed class AgentSession
                     Raise(new AgentToolStarted(call));
                     var result = await _tools.ExecuteAsync(call, running.Token);
                     _messages.Add(new ChatMessage(ChatRole.Tool, result.Content, ToolCallId: call.Id));
+                    _log?.Tool(call, result);
                     Raise(new AgentToolFinished(call, result));
                 }
             }
@@ -153,6 +158,8 @@ public sealed class AgentSession
         finally
         {
             _running = null;
+            var reply = Status == AgentStatus.Done ? _messages.LastOrDefault(m => m.Role == ChatRole.Assistant)?.Content : null;
+            _log?.Finished(Status, reply, Error);
         }
     }
 

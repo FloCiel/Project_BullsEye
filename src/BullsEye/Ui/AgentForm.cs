@@ -15,6 +15,7 @@ internal sealed class AgentForm : Form, IChangeApprover
     private readonly Action _openSettings;
     private readonly Func<string?, string?> _pickFolder;
     private readonly string _backupRoot;
+    private readonly string _logRoot;
     private readonly Theme _theme = Theme.Current();
 
     private readonly Label _folder;
@@ -44,6 +45,7 @@ internal sealed class AgentForm : Form, IChangeApprover
 
     /// <param name="pickFolder">폴더 선택 창 (시작 폴더 → 고른 폴더, 취소면 null).</param>
     /// <param name="backupRoot">원본을 복사해 둘 곳 (USB의 exe 옆).</param>
+    /// <param name="logRoot">실행 로그를 남길 곳 (백업처럼 exe 옆).</param>
     public AgentForm(
         IChatProvider provider,
         AgentOptions options,
@@ -51,13 +53,15 @@ internal sealed class AgentForm : Form, IChangeApprover
         string folder,
         Action openSettings,
         Func<string?, string?> pickFolder,
-        string backupRoot)
+        string backupRoot,
+        string logRoot)
     {
         _provider = provider;
         _options = options;
         _openSettings = openSettings;
         _pickFolder = pickFolder;
         _backupRoot = backupRoot;
+        _logRoot = logRoot;
 
         Text = "BullsEye 에이전트";
         Icon = AppIcon.Create();
@@ -264,8 +268,9 @@ internal sealed class AgentForm : Form, IChangeApprover
     private void StartSession(string folder)
     {
         _workspace = new AgentWorkspace(folder);
-        _backup = new AgentBackup(_workspace, _backupRoot, DateTimeOffset.Now);
-        _session = new AgentSession(_provider, _workspace, this, _options, _backup);
+        var startedAt = DateTimeOffset.Now;
+        _backup = new AgentBackup(_workspace, _backupRoot, startedAt);
+        _session = new AgentSession(_provider, _workspace, this, _options, _backup, new AgentLog(_workspace.Root, _logRoot, startedAt));
         if (_model.SelectedItem is string model) _session.Model = model;
         _session.Progress += OnProgress;
 
