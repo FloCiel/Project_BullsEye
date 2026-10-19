@@ -503,6 +503,7 @@ internal sealed class AgentForm : Form, IChangeApprover
         return call.Name switch
         {
             "list_files" => $"파일 목록 {(path is null or "." ? "" : path)} {(Argument(call, "pattern") is { } p and not "*" ? p : "")}".TrimEnd(),
+            "search_files" => $"검색 {Argument(call, "query")}",
             "read_file" => $"읽기 {path}",
             "edit_file" => $"수정 {path}",
             "write_file" => $"쓰기 {path}",
@@ -513,6 +514,8 @@ internal sealed class AgentForm : Form, IChangeApprover
     private static string Summary(AgentToolFinished finished) => finished.Call.Name switch
     {
         "list_files" => $"{finished.Result.Content.Split('\n').Count(l => l.Length > 0 && !l.StartsWith('('))}개",
+        "search_files" => finished.Result.IsError ? FirstLine(finished.Result.Content)
+            : $"{finished.Result.Content.Split('\n').Count(l => l.Length > 0 && !l.StartsWith('('))}곳",
         "read_file" => $"{finished.Result.Content.TrimEnd('\n').Split('\n').Length}줄",
         "edit_file" or "write_file" => WriteSummary(finished.Result.Content),
         _ => FirstLine(finished.Result.Content),

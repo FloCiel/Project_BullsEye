@@ -50,7 +50,7 @@ public sealed class AgentSession
         You can only touch files inside this folder, using the tools.
 
         Guidelines:
-        - Read files before changing them. Use list_files to find the relevant functions.
+        - Read files before changing them. Use list_files and search_files to find the relevant functions and their callers.
         - Use edit_file for small changes and write_file for new files or full rewrites.
         - Finish the whole task yourself. If it needs new functions or helper files, create them with write_file;
           never tell the user to create files you can create. Each change is shown to the user for approval anyway.

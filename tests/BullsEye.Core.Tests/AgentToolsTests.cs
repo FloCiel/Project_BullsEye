@@ -209,4 +209,43 @@ public class AgentToolsTests : IDisposable
         Assert.True(result.IsError);
         Assert.Contains("none of its lines appear", result.Content);
     }
+
+    [Fact]
+    public async Task SearchFiles_FindsLinesCaseInsensitively_AndSkipsBinaryFiles()
+    {
+        _folder.File("a.m", "function y = foo(x)\n    y = x;\nend\n");
+        _folder.File("sub/b.m", "z = FOO(3);\n");
+        _folder.Bytes("data.mat", [0x66, 0x6F, 0x6F, 0x00, 0x01]);
+
+        var result = await Run("search_files", """{"query":"foo"}""");
+
+        Assert.False(result.IsError, result.Content);
+        Assert.Equal("a.m:1: function y = foo(x)\nsub/b.m:1: z = FOO(3);", result.Content);
+    }
+
+    [Fact]
+    public async Task SearchFiles_SupportsRegexAndPattern()
+    {
+        _folder.File("a.m", "foo(1)\nfoobar = 2;\n");
+        _folder.File("notes.txt", "foo(1)\n");
+
+        var result = await Run("search_files", """{"query":"foo\\(","regex":"true","pattern":"*.m"}""");
+
+        Assert.Equal("a.m:1: foo(1)", result.Content);
+        Assert.Equal("(no matches)", (await Run("search_files", """{"query":"nothing"}""")).Content);
+    }
+
+    [Theory]
+    [InlineData("""{"query":"(","regex":true}""", "not a valid regular expression")]
+    [InlineData("""{"query":""}""", "query is empty")]
+    [InlineData("""{"query":"x","path":"../"}""", "outside the workspace")]
+    public async Task SearchFiles_BadRequest_ReturnsError(string arguments, string expected)
+    {
+        _folder.File("a.m", "x\n");
+
+        var result = await Run("search_files", arguments);
+
+        Assert.True(result.IsError);
+        Assert.Contains(expected, result.Content);
+    }
 }

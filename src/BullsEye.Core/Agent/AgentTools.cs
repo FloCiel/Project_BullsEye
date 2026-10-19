@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace BullsEye.Core;
 
@@ -25,7 +26,7 @@ public interface IChangeApprover
 public sealed record ToolResult(string Content, bool IsError = false);
 
 /// <summary>
-/// pi 방식의 최소 도구 모음: 목록 / 읽기 / 일치하는 부분 바꾸기 / 쓰기.
+/// pi 방식의 최소 도구 모음: 목록 / 검색 / 읽기 / 일치하는 부분 바꾸기 / 쓰기.
 /// 명령 실행 도구는 없다 (공용 PC에서 아무 명령이나 돌리지 않게).
 /// </summary>
 /// <param name="backup">있으면 승인된 변경을 쓰기 직전에 원본을 복사해 둔다.</param>
@@ -34,6 +35,10 @@ public sealed class AgentTools(AgentWorkspace workspace, IChangeApprover approve
     public const int MaxListedFiles = 300;
     public const int DefaultReadLines = 2000;
     public const int MaxReadChars = 60_000;
+    public const int MaxSearchResults = 100;
+    public const int MaxSearchLineChars = 200;
+
+    private static readonly TimeSpan RegexTimeout = TimeSpan.FromMilliseconds(200);
 
     public static IReadOnlyList<ToolDefinition> Definitions { get; } =
     [
@@ -44,6 +49,16 @@ public sealed class AgentTools(AgentWorkspace workspace, IChangeApprover approve
               "path":{"type":"string","description":"Directory to list. Default: workspace root."},
               "pattern":{"type":"string","description":"File name pattern such as *.m. Default: *."}
             }}
+            """),
+        new("search_files",
+            "Search the text of files in the workspace and return matching lines as path:line: text. Use it to find where a function or variable is defined and called.",
+            """
+            {"type":"object","properties":{
+              "query":{"type":"string","description":"Text to find (case-insensitive)."},
+              "regex":{"type":"boolean","description":"Treat query as a .NET regular expression. Default: false."},
+              "path":{"type":"string","description":"Directory to search. Default: workspace root."},
+              "pattern":{"type":"string","description":"File name pattern such as *.m. Default: *."}
+            },"required":["query"]}
             """),
         new("read_file",
             "Read a text file. Returns its content as-is (no line numbers). Use offset/limit for long files.",
@@ -82,6 +97,7 @@ public sealed class AgentTools(AgentWorkspace workspace, IChangeApprover approve
             return call.Name switch
             {
                 "list_files" => List(Optional(args, "path") ?? ".", Optional(args, "pattern") ?? "*"),
+                "search_files" => Search(Required(args, "query"), OptionalBool(args, "regex") ?? false, Optional(args, "path") ?? ".", Optional(args, "pattern") ?? "*"),
                 "read_file" => Read(Required(args, "path"), OptionalInt(args, "offset") ?? 1, OptionalInt(args, "limit") ?? DefaultReadLines),
                 "edit_file" => await EditAsync(Required(args, "path"), Required(args, "old_text"), Required(args, "new_text"), cancellationToken),
                 "write_file" => await WriteAsync(Required(args, "path"), Required(args, "content"), cancellationToken),
@@ -103,13 +119,7 @@ public sealed class AgentTools(AgentWorkspace workspace, IChangeApprover approve
         var directory = workspace.Resolve(path);
         if (!Directory.Exists(directory)) throw new AgentToolException($"Directory not found: {path}");
 
-        var options = new EnumerationOptions
-        {
-            RecurseSubdirectories = true,
-            IgnoreInaccessible = true,
-            AttributesToSkip = FileAttributes.Hidden | FileAttributes.System | FileAttributes.ReparsePoint,
-        };
-        var files = Directory.EnumerateFiles(directory, pattern, options)
+        var files = Directory.EnumerateFiles(directory, pattern, FileEnumeration)
             .Select(workspace.Relative)
             .Order(StringComparer.OrdinalIgnoreCase)
             .Take(MaxListedFiles + 1)
@@ -118,6 +128,72 @@ public sealed class AgentTools(AgentWorkspace workspace, IChangeApprover approve
         if (files.Count == 0) return new ToolResult("(no files)");
         if (files.Count <= MaxListedFiles) return new ToolResult(string.Join("\n", files));
         return new ToolResult(string.Join("\n", files.Take(MaxListedFiles)) + $"\n(truncated: more than {MaxListedFiles} files, narrow path or pattern)");
+    }
+
+    private static readonly EnumerationOptions FileEnumeration = new()
+    {
+        RecurseSubdirectories = true,
+        IgnoreInaccessible = true,
+        AttributesToSkip = FileAttributes.Hidden | FileAttributes.System | FileAttributes.ReparsePoint,
+    };
+
+    private ToolResult Search(string query, bool regex, string path, string pattern)
+    {
+        if (query.Length == 0) throw new AgentToolException("query is empty.");
+        var directory = workspace.Resolve(path);
+        if (!Directory.Exists(directory)) throw new AgentToolException($"Directory not found: {path}");
+
+        Regex matcher;
+        try
+        {
+            matcher = new Regex(regex ? query : Regex.Escape(query), RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, RegexTimeout);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new AgentToolException($"query is not a valid regular expression: {ex.Message}");
+        }
+
+        var results = new List<string>();
+        var files = Directory.EnumerateFiles(directory, pattern, FileEnumeration)
+            .Select(workspace.Relative)
+            .Order(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in files)
+        {
+            string text;
+            try
+            {
+                text = workspace.ReadText(file);
+            }
+            catch (AgentToolException)
+            {
+                continue; // 바이너리(.mat, .fig, .mlx)이거나 너무 큰 파일.
+            }
+
+            var lines = text.Split('\n');
+            for (var i = 0; i < lines.Length; i++)
+            {
+                bool hit;
+                try
+                {
+                    hit = matcher.IsMatch(lines[i]);
+                }
+                catch (RegexMatchTimeoutException)
+                {
+                    throw new AgentToolException("The regular expression took too long. Use a simpler query.");
+                }
+
+                if (!hit) continue;
+                if (results.Count == MaxSearchResults)
+                {
+                    return new ToolResult(string.Join("\n", results) + $"\n(truncated: more than {MaxSearchResults} matches, narrow query, path or pattern)");
+                }
+
+                var line = lines[i].Trim();
+                results.Add($"{file}:{i + 1}: {(line.Length > MaxSearchLineChars ? line[..MaxSearchLineChars] + "…" : line)}");
+            }
+        }
+
+        return new ToolResult(results.Count == 0 ? "(no matches)" : string.Join("\n", results));
     }
 
     private ToolResult Read(string path, int offset, int limit)
@@ -212,6 +288,14 @@ public sealed class AgentTools(AgentWorkspace workspace, IChangeApprover approve
         args.TryGetProperty(name, out var value) && value.ValueKind != JsonValueKind.Null
             ? value.ValueKind == JsonValueKind.String ? value.GetString() : throw new AgentToolException($"Argument {name} must be a string.")
             : null;
+
+    private static bool? OptionalBool(JsonElement args, string name)
+    {
+        if (!args.TryGetProperty(name, out var value) || value.ValueKind == JsonValueKind.Null) return null;
+        if (value.ValueKind is JsonValueKind.True or JsonValueKind.False) return value.GetBoolean();
+        if (value.ValueKind == JsonValueKind.String && bool.TryParse(value.GetString(), out var b)) return b;
+        throw new AgentToolException($"Argument {name} must be true or false.");
+    }
 
     private static int? OptionalInt(JsonElement args, string name)
     {
