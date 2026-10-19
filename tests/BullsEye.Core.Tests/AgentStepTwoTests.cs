@@ -27,6 +27,55 @@ public class AgentBackupTests : IDisposable
         tools.ExecuteAsync(new ToolCall("c", "edit_file", $$"""{"path":"{{path}}","old_text":"{{oldText}}","new_text":"{{newText}}"}"""));
 
     [Fact]
+    public async Task DeleteFile_AfterApproval_BacksUpOriginalThenDeletes()
+    {
+        var original = Encoding.UTF8.GetBytes("function y = f(x)\r\n");
+        _folder.Bytes("f.m", original);
+        var (tools, backup) = Create();
+
+        var result = await tools.ExecuteAsync(new ToolCall("c", "delete_file", """{"path":"f.m"}"""));
+
+        Assert.Equal("Deleted f.m.", result.Content);
+        Assert.False(File.Exists(Path.Combine(_folder.Path, "f.m")));
+        Assert.Equal(original, File.ReadAllBytes(Path.Combine(backup.Folder, "f.m")));
+        var change = Assert.Single(_approver.Changes);
+        Assert.True(change.IsDelete);
+        Assert.Equal("function y = f(x)\n", change.Before);
+    }
+
+    [Fact]
+    public async Task DeleteFile_Rejected_KeepsFileWithoutBackup()
+    {
+        _folder.File("f.m", "x = 1;\n");
+        _approver.Approve = false;
+        var (tools, backup) = Create();
+
+        var result = await tools.ExecuteAsync(new ToolCall("c", "delete_file", """{"path":"f.m"}"""));
+
+        Assert.True(result.IsError);
+        Assert.Contains("rejected", result.Content);
+        Assert.True(File.Exists(Path.Combine(_folder.Path, "f.m")));
+        Assert.Equal(0, backup.Count);
+    }
+
+    [Theory]
+    [InlineData("sub", "is a directory")]
+    [InlineData("none.m", "File not found")]
+    [InlineData("../f.m", "outside the workspace")]
+    public async Task DeleteFile_BadPath_ReturnsErrorWithoutAsking(string path, string expected)
+    {
+        _folder.File("sub/a.m", "x\n");
+        var (tools, _) = Create();
+
+        var result = await tools.ExecuteAsync(new ToolCall("c", "delete_file", $$"""{"path":"{{path}}"}"""));
+
+        Assert.True(result.IsError);
+        Assert.Contains(expected, result.Content);
+        Assert.Empty(_approver.Changes);
+        Assert.True(Directory.Exists(Path.Combine(_folder.Path, "sub")));
+    }
+
+    [Fact]
     public async Task ApprovedEdit_CopiesOriginalOnce_ToUsbNotWorkFolder()
     {
         var original = Encoding.UTF8.GetBytes("x = 1;\r\ny = 2;");
@@ -77,6 +126,15 @@ public class LineDiffTests
             new DiffLine(DiffKind.Same, "c", 3, 3),
             new DiffLine(DiffKind.Added, "d", null, 4),
         ], lines);
+    }
+
+    [Fact]
+    public void Compute_DeletedFile_IsAllRemoved()
+    {
+        var lines = LineDiff.Compute("x\ny", null);
+
+        Assert.All(lines, l => Assert.Equal(DiffKind.Removed, l.Kind));
+        Assert.Equal([1, 2], lines.Select(l => l.OldNumber!.Value));
     }
 
     [Fact]

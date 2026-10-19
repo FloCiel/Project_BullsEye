@@ -87,6 +87,15 @@ public sealed class AgentWorkspace
         File.WriteAllBytes(full, bytes);
     }
 
+    /// <exception cref="AgentToolException">없거나 폴더임 (폴더는 지우지 않는다).</exception>
+    public void DeleteFile(string path)
+    {
+        var full = Resolve(path);
+        if (Directory.Exists(full)) throw new AgentToolException($"{path} is a directory. Only files can be deleted.");
+        if (!File.Exists(full)) throw new AgentToolException($"File not found: {path}");
+        File.Delete(full);
+    }
+
     private (string Text, TextFormat Format) Read(string full, string path)
     {
         if (Directory.Exists(full)) throw new AgentToolException($"{path} is a directory, not a file.");

@@ -404,8 +404,8 @@ internal sealed class AgentForm : Form, IChangeApprover
         var lines = LineDiff.Compute(change.Before, change.After);
         var added = lines.Count(l => l.Kind == DiffKind.Added);
         var removed = lines.Count(l => l.Kind == DiffKind.Removed);
-        _approvalTitle.Text = change.Before is null
-            ? $"새 파일 {change.Path} ({added}줄) 을 만들까요?"
+        _approvalTitle.Text = change.IsDelete ? $"{change.Path} 을 삭제할까요? ({removed}줄, 원본은 백업 폴더에)"
+            : change.Before is null ? $"새 파일 {change.Path} ({added}줄) 을 만들까요?"
             : $"{change.Path} 을 바꿀까요?  +{added} −{removed}";
 
         _diff.Clear();
@@ -507,6 +507,7 @@ internal sealed class AgentForm : Form, IChangeApprover
             "read_file" => $"읽기 {path}",
             "edit_file" => $"수정 {path}",
             "write_file" => $"쓰기 {path}",
+            "delete_file" => $"삭제 {path}",
             _ => call.Name,
         };
     }
@@ -517,7 +518,7 @@ internal sealed class AgentForm : Form, IChangeApprover
         "search_files" => finished.Result.IsError ? FirstLine(finished.Result.Content)
             : $"{finished.Result.Content.Split('\n').Count(l => l.Length > 0 && !l.StartsWith('('))}곳",
         "read_file" => $"{finished.Result.Content.TrimEnd('\n').Split('\n').Length}줄",
-        "edit_file" or "write_file" => WriteSummary(finished.Result.Content),
+        "edit_file" or "write_file" or "delete_file" => WriteSummary(finished.Result.Content),
         _ => FirstLine(finished.Result.Content),
     };
 
@@ -529,6 +530,7 @@ internal sealed class AgentForm : Form, IChangeApprover
         if (content.StartsWith("Created", StringComparison.Ordinal)) return $"새 파일{count}";
         if (content.StartsWith("Wrote", StringComparison.Ordinal)) return $"전체 교체{count}";
         if (content.StartsWith("Edited", StringComparison.Ordinal)) return "수정함";
+        if (content.StartsWith("Deleted", StringComparison.Ordinal)) return "삭제함";
         if (content.StartsWith("No change", StringComparison.Ordinal)) return "바뀐 것 없음";
         return FirstLine(content);
     }

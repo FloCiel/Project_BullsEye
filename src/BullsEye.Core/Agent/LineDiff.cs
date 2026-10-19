@@ -20,11 +20,11 @@ public static class LineDiff
     // 앞뒤 공통 부분을 뺀 나머지가 이보다 크면 LCS 표를 만들지 않고 통째 교체로 보여준다 (메모리 보호).
     private const long MaxTableCells = 4_000_000;
 
-    /// <summary>모든 줄을 담은 diff. 새 파일(<paramref name="before"/> = null)은 전부 추가.</summary>
-    public static IReadOnlyList<DiffLine> Compute(string? before, string after)
+    /// <summary>모든 줄을 담은 diff. 새 파일(<paramref name="before"/> = null)은 전부 추가, 삭제(<paramref name="after"/> = null)는 전부 제거.</summary>
+    public static IReadOnlyList<DiffLine> Compute(string? before, string? after)
     {
         var oldLines = before is null ? [] : Split(before);
-        var newLines = Split(after);
+        var newLines = after is null ? [] : Split(after);
 
         var prefix = 0;
         while (prefix < oldLines.Length && prefix < newLines.Length && oldLines[prefix] == newLines[prefix]) prefix++;

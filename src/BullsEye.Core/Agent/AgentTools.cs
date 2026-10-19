@@ -13,8 +13,11 @@ public sealed class AgentToolException(string message) : BullsEyeException(messa
 /// <summary>에이전트가 바꾸려는 파일 하나. 쓰기 전에 <see cref="IChangeApprover"/>에게 보인다.</summary>
 /// <param name="Path">작업 폴더 기준 상대 경로 (<c>/</c> 구분).</param>
 /// <param name="Before">지금 내용. 새 파일이면 null.</param>
-/// <param name="After">바뀐 뒤 내용. 둘 다 줄바꿈은 <c>\n</c>.</param>
-public sealed record FileChange(string Path, string? Before, string After);
+/// <param name="After">바뀐 뒤 내용. 삭제면 null. 둘 다 줄바꿈은 <c>\n</c>.</param>
+public sealed record FileChange(string Path, string? Before, string? After)
+{
+    public bool IsDelete => After is null;
+}
 
 /// <summary>파일 변경을 실제로 쓰기 전에 사용자에게 묻는다 (2단계에서 diff 승인 창이 구현).</summary>
 public interface IChangeApprover
@@ -26,7 +29,7 @@ public interface IChangeApprover
 public sealed record ToolResult(string Content, bool IsError = false);
 
 /// <summary>
-/// pi 방식의 최소 도구 모음: 목록 / 검색 / 읽기 / 일치하는 부분 바꾸기 / 쓰기.
+/// pi 방식의 최소 도구 모음: 목록 / 검색 / 읽기 / 일치하는 부분 바꾸기 / 쓰기 / 삭제.
 /// 명령 실행 도구는 없다 (공용 PC에서 아무 명령이나 돌리지 않게).
 /// </summary>
 /// <param name="backup">있으면 승인된 변경을 쓰기 직전에 원본을 복사해 둔다.</param>
@@ -78,6 +81,13 @@ public sealed class AgentTools(AgentWorkspace workspace, IChangeApprover approve
               "new_text":{"type":"string"}
             },"required":["path","old_text","new_text"]}
             """),
+        new("delete_file",
+            "Delete a file. Use it only when the user explicitly asked to delete or remove that file; never empty a file instead. The original is backed up first.",
+            """
+            {"type":"object","properties":{
+              "path":{"type":"string"}
+            },"required":["path"]}
+            """),
         new("write_file",
             "Create a new file or replace a whole file. Prefer edit_file for changing part of an existing file.",
             """
@@ -100,6 +110,7 @@ public sealed class AgentTools(AgentWorkspace workspace, IChangeApprover approve
                 "search_files" => Search(Required(args, "query"), OptionalBool(args, "regex") ?? false, OrDefault(args, "path", "."), OrDefault(args, "pattern", "*")),
                 "read_file" => Read(Required(args, "path"), OptionalInt(args, "offset") ?? 1, OptionalInt(args, "limit") ?? DefaultReadLines),
                 "edit_file" => await EditAsync(Required(args, "path"), Required(args, "old_text"), Required(args, "new_text"), cancellationToken),
+                "delete_file" => await DeleteAsync(Required(args, "path"), cancellationToken),
                 "write_file" => await WriteAsync(Required(args, "path"), Required(args, "content"), cancellationToken),
                 _ => throw new AgentToolException($"Unknown tool: {call.Name}"),
             };
@@ -248,23 +259,33 @@ public sealed class AgentTools(AgentWorkspace workspace, IChangeApprover approve
             ?? new ToolResult($"{(before is null ? "Created" : "Wrote")} {workspace.Relative(full)} ({lineCount} lines).");
     }
 
+    private async Task<ToolResult> DeleteAsync(string path, CancellationToken cancellationToken)
+    {
+        var before = workspace.ReadText(path);
+        var relative = workspace.Relative(workspace.Resolve(path));
+        if (!await approver.ApproveAsync(new FileChange(relative, before, null), cancellationToken)) return Rejected(relative);
+
+        backup?.Save(relative);
+        workspace.DeleteFile(path);
+        return new ToolResult($"Deleted {relative}.");
+    }
+
     /// <summary>승인을 받아 쓴다. 거절되면 그 결과를, 썼으면 null을 돌려준다.</summary>
     private async Task<ToolResult?> ApplyAsync(string path, string? before, string after, CancellationToken cancellationToken)
     {
         var relative = workspace.Relative(workspace.Resolve(path));
         if (before == after) return new ToolResult($"No change: {relative} already has this content.");
 
-        if (!await approver.ApproveAsync(new FileChange(relative, before, after), cancellationToken))
-        {
-            return new ToolResult(
-                $"The user rejected the change to {relative}. Do not retry the same change; ask the user what they want instead.",
-                IsError: true);
-        }
+        if (!await approver.ApproveAsync(new FileChange(relative, before, after), cancellationToken)) return Rejected(relative);
 
         backup?.Save(relative);
         workspace.WriteText(path, after);
         return null;
     }
+
+    private static ToolResult Rejected(string relative) => new(
+        $"The user rejected the change to {relative}. Do not retry the same change; ask the user what they want instead.",
+        IsError: true);
 
     private static JsonElement ParseArguments(string arguments)
     {
