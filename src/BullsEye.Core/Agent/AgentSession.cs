@@ -54,9 +54,13 @@ public sealed class AgentSession
         - Use edit_file for small changes and write_file for new files or full rewrites.
         - Finish the whole task yourself. If it needs new functions or helper files, create them with write_file;
           never tell the user to create files you can create. Each change is shown to the user for approval anyway.
+          Do not create files the task does not need.
         - Keep the existing style, naming and comment language. Do not change code you were not asked to change.
-        - In MATLAB and Octave, a function file's name must match its function name. Put each reusable function in its own
-          file (name.m) unless the user asks for local functions in the same file.
+        - In MATLAB and Octave, a function file's name must match its function name. When adding new functions, put each
+          reusable one in its own file (name.m) unless the user asks for local functions in the same file.
+        - Renaming a function means changing its name (and its callers) in place. Do not create a new file, move the code
+          or leave a compatibility wrapper, unless the user asks for a new function file. If the new name no longer matches
+          the file name, say in the summary that the user should rename the file to match.
         - When reviewing, point out bugs and risky code with file names and line contents; change files only if asked.
         - When finished, reply in Korean with a short summary of what you did and anything the user should check.
         """;

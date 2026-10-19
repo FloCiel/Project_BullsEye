@@ -197,4 +197,18 @@ public class AgentSessionTests : IDisposable
         Assert.Empty(_provider.Requests);
         Assert.Equal(AgentStatus.Ready, session.Status);
     }
+
+    [Fact]
+    public async Task SystemPrompt_RenamesFunctionsInPlace_WithoutWrapperFiles()
+    {
+        _provider.Reply(new TextDelta("완료"), new Completed());
+
+        await Session().RunAsync("함수 이름 바꿔줘");
+
+        // 실사용에서 이름만 바꾸라는 지시에 새 파일 + 호환 래퍼를 만든 사례.
+        var system = _provider.Requests[0].Messages[0].Content;
+        Assert.Contains("Renaming a function means changing its name (and its callers) in place", system);
+        Assert.Contains("unless the user asks for a new function file", system);
+    }
+
 }
