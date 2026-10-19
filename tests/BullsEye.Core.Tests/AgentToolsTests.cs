@@ -127,4 +127,86 @@ public class AgentToolsTests : IDisposable
         Assert.True(result.IsError);
         Assert.Contains("Unknown tool: bash", result.Content);
     }
+
+    [Fact]
+    public async Task EditFile_IgnoresTrailingWhitespace_WhenExactTextIsMissing()
+    {
+        _folder.File("a.m", "x = 1;   \ny = 2;\nz = 3;\n");
+
+        var result = await Run("edit_file", """{"path":"a.m","old_text":"x = 1;\ny = 2;","new_text":"x = 10;\ny = 2;"}""");
+
+        Assert.False(result.IsError, result.Content);
+        Assert.Contains("ignoring trailing whitespace", result.Content);
+        Assert.Equal("x = 10;\ny = 2;\nz = 3;\n", Content("a.m"));
+    }
+
+    [Fact]
+    public async Task EditFile_IgnoresIndentation_AndKeepsTheFileIndent()
+    {
+        _folder.File("a.m", "function f\n\ty = 1;\n\tz = 2;\nend\n");
+
+        var result = await Run("edit_file", """{"path":"a.m","old_text":"    y = 1;\n    z = 2;\n","new_text":"    y = 1;\n    w = 3;\n    z = 2;\n"}""");
+
+        Assert.False(result.IsError, result.Content);
+        Assert.Contains("lines 2-3 ignoring indentation", result.Content);
+        Assert.Equal("function f\n\ty = 1;\n\tw = 3;\n\tz = 2;\nend\n", Content("a.m"));
+    }
+
+    [Fact]
+    public async Task EditFile_AddsMissingIndent_WhenModelDroppedIt()
+    {
+        _folder.File("a.m", "  a\n  b\nc\n");
+
+        var result = await Run("edit_file", """{"path":"a.m","old_text":"a\nb\n","new_text":"a2\nb\n"}""");
+
+        Assert.False(result.IsError, result.Content);
+        Assert.Equal("  a2\n  b\nc\n", Content("a.m"));
+    }
+
+    [Fact]
+    public async Task EditFile_WhitespaceMatchInSeveralPlaces_IsRejected()
+    {
+        _folder.File("a.m", "  x = 1;\n\tx = 1;\n");
+
+        var result = await Run("edit_file", """{"path":"a.m","old_text":"    x = 1;","new_text":"x = 2;"}""");
+
+        Assert.True(result.IsError);
+        Assert.Contains("matches 2 places (lines 1, 2)", result.Content);
+        Assert.Empty(_approver.Changes);
+    }
+
+    [Fact]
+    public async Task EditFile_DuplicateExactText_ListsLineNumbers()
+    {
+        _folder.File("a.m", "x = 1;\ny = 2;\nx = 1;\n");
+
+        var result = await Run("edit_file", """{"path":"a.m","old_text":"x = 1;","new_text":"q"}""");
+
+        Assert.True(result.IsError);
+        Assert.Contains("appears 2 times in a.m (lines 1, 3)", result.Content);
+    }
+
+    [Fact]
+    public async Task EditFile_NotFound_ShowsClosestLinesWithNumbers()
+    {
+        _folder.File("a.m", "a = 1;\nb = 2;\nc = 3;\n");
+
+        var result = await Run("edit_file", """{"path":"a.m","old_text":"b = 2;\nc = 4;","new_text":"q"}""");
+
+        Assert.True(result.IsError);
+        Assert.Contains("closest part of the file is lines 2-3", result.Content);
+        Assert.Contains("    2| b = 2;\n    3| c = 3;", result.Content);
+        Assert.Empty(_approver.Changes);
+    }
+
+    [Fact]
+    public async Task EditFile_NothingSimilar_SaysSoWithoutExcerpt()
+    {
+        _folder.File("a.m", "a = 1;\n");
+
+        var result = await Run("edit_file", """{"path":"a.m","old_text":"zzz","new_text":"q"}""");
+
+        Assert.True(result.IsError);
+        Assert.Contains("none of its lines appear", result.Content);
+    }
 }

@@ -25,7 +25,7 @@ public interface IChangeApprover
 public sealed record ToolResult(string Content, bool IsError = false);
 
 /// <summary>
-/// pi 방식의 최소 도구 모음: 목록 / 읽기 / 정확히 일치하는 부분 바꾸기 / 쓰기.
+/// pi 방식의 최소 도구 모음: 목록 / 읽기 / 일치하는 부분 바꾸기 / 쓰기.
 /// 명령 실행 도구는 없다 (공용 PC에서 아무 명령이나 돌리지 않게).
 /// </summary>
 /// <param name="backup">있으면 승인된 변경을 쓰기 직전에 원본을 복사해 둔다.</param>
@@ -55,7 +55,7 @@ public sealed class AgentTools(AgentWorkspace workspace, IChangeApprover approve
             },"required":["path"]}
             """),
         new("edit_file",
-            "Replace exactly one occurrence of old_text with new_text in a file. old_text must match the file exactly, including whitespace, and must be unique: include enough surrounding lines. Read the file first.",
+            "Replace one occurrence of old_text with new_text in a file. Copy old_text exactly from the file and include enough surrounding lines to make it unique. If it does not match exactly, whole lines are matched ignoring trailing whitespace and then indentation, but only when that finds exactly one place. Read the file first.",
             """
             {"type":"object","properties":{
               "path":{"type":"string"},
@@ -153,14 +153,11 @@ public sealed class AgentTools(AgentWorkspace workspace, IChangeApprover approve
         if (oldText.Length == 0) throw new AgentToolException("old_text is empty. Use write_file to create a file.");
 
         var before = workspace.ReadText(path);
-        var count = CountOccurrences(before, oldText);
-        if (count == 0) throw new AgentToolException($"old_text was not found in {path}. Read the file again and copy the text exactly.");
-        if (count > 1) throw new AgentToolException($"old_text appears {count} times in {path}. Include more surrounding lines so it is unique.");
-
-        var index = before.IndexOf(oldText, StringComparison.Ordinal);
-        var after = string.Concat(before.AsSpan(0, index), newText, before.AsSpan(index + oldText.Length));
+        var match = EditMatcher.Find(before, oldText, newText, path);
+        var after = string.Concat(before.AsSpan(0, match.Start), match.Replacement, before.AsSpan(match.Start + match.Length));
+        var edited = $"Edited {workspace.Relative(workspace.Resolve(path))}.";
         return await ApplyAsync(path, before, after, cancellationToken)
-            ?? new ToolResult($"Edited {workspace.Relative(workspace.Resolve(path))}.");
+            ?? new ToolResult(match.Note is null ? edited : $"{edited} ({match.Note})");
     }
 
     private async Task<ToolResult> WriteAsync(string path, string content, CancellationToken cancellationToken)
@@ -191,17 +188,6 @@ public sealed class AgentTools(AgentWorkspace workspace, IChangeApprover approve
         backup?.Save(relative);
         workspace.WriteText(path, after);
         return null;
-    }
-
-    private static int CountOccurrences(string text, string value)
-    {
-        var count = 0;
-        for (var i = text.IndexOf(value, StringComparison.Ordinal); i >= 0; i = text.IndexOf(value, i + 1, StringComparison.Ordinal))
-        {
-            count++;
-        }
-
-        return count;
     }
 
     private static JsonElement ParseArguments(string arguments)
