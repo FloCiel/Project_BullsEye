@@ -219,12 +219,15 @@ public class AgentSessionTests : IDisposable
         _provider
             .Reply(Call("call_1", "read_file", "{\"path\":\"rect.m\"}"), new Completed())
             .Reply(Call("call_2", "edit_file", "{\"path\":\"rect.m\",\"old_text\":\"없는 텍스트\",\"new_text\":\"B = 1;\"}"), new Completed())
+            // 실패 메시지에 가장 비슷한 줄(파일 내용)이 붙는 경우.
+            .Reply(Call("call_3", "edit_file", "{\"path\":\"rect.m\",\"old_text\":\"A = w*h;\\nC = 2;\",\"new_text\":\"B = 1;\"}"), new Completed())
+            .Reply(Call("call_4", "search_files", "{\"query\":\"rect\",\"path\":\"\"}"), new Completed())
             .Reply(new TextDelta("이름을 바꿨습니다."), new Completed());
         var log = new AgentLog(_folder.Path, logs.Path, new DateTimeOffset(2026, 10, 19, 21, 45, 41, TimeSpan.FromHours(9)));
         var session = new AgentSession(
             _provider, new AgentWorkspace(_folder.Path), _approver, new AgentOptions("vendor/model", true, ReasoningEffort.Medium), log: log);
 
-        await session.RunAsync("이름 바꿔줘\nSelected code:\n```\nSECRET_CODE = 1;\n```");
+        await session.RunAsync("이름 바꿔줘\nSelected code:\n```\nSECRET_CODE = 1;\nSECRET_TWO = 2;\n```\nThis runs without a window.");
 
         Assert.Equal(logs.Path, Path.GetDirectoryName(log.FilePath));
         Assert.StartsWith("20261019-214541 ", Path.GetFileName(log.FilePath));
@@ -233,11 +236,15 @@ public class AgentSessionTests : IDisposable
         Assert.Contains("이름 바꿔줘", text);
         Assert.Contains("read_file rect.m → 성공", text);
         Assert.Contains("edit_file rect.m → 실패: ", text);
+        Assert.Contains("edit_file rect.m → 실패: Error: old_text was not found in rect.m. The closest part of the file is lines 1-2:", text);
+        Assert.Contains("search_files \"rect\" → 성공", text);
+        Assert.Contains("Selected code:\n(선택한 코드 2줄 생략)\nThis runs without a window.", text.ReplaceLineEndings("\n"));
         Assert.Contains("── 끝: Done", text);
         Assert.Contains("이름을 바꿨습니다.", text);
         // 파일 내용 · 바꾼 텍스트 · 선택한 코드는 남기지 않는다.
         Assert.DoesNotContain("A = w*h;", text);
         Assert.DoesNotContain("B = 1;", text);
         Assert.DoesNotContain("SECRET_CODE", text);
+        Assert.DoesNotContain("SECRET_TWO", text);
     }
 }

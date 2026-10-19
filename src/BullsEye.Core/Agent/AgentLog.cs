@@ -29,17 +29,33 @@ public sealed class AgentLog
     /// <summary>이 세션의 로그 파일 (세션 하나에 파일 하나, 이어 하는 지시도 같은 파일).</summary>
     public string FilePath { get; }
 
-    /// <summary>지시를 적는다. 선택한 코드 블록(<c>```</c>부터)은 빼고 적는다.</summary>
+    /// <summary>지시를 적는다. 선택한 코드 블록(<c>```</c> 사이)은 줄 수만 적는다.</summary>
     public void Instruction(string instruction, string model)
     {
-        var text = instruction.ReplaceLineEndings("\n").Split('\n').TakeWhile(line => !line.TrimStart().StartsWith("```", StringComparison.Ordinal));
-        Write($"── 지시 ({model})\n{string.Join("\n", text).TrimEnd()}");
+        var lines = new List<string>();
+        var inCode = false;
+        var codeLines = 0;
+        foreach (var line in instruction.ReplaceLineEndings("\n").Split('\n'))
+        {
+            if (!line.TrimStart().StartsWith("```", StringComparison.Ordinal))
+            {
+                if (inCode) codeLines++;
+                else lines.Add(line);
+                continue;
+            }
+
+            if (inCode) lines.Add($"(선택한 코드 {codeLines}줄 생략)");
+            inCode = !inCode;
+            codeLines = 0;
+        }
+
+        if (inCode) lines.Add($"(선택한 코드 {codeLines}줄 생략)");
+        Write($"── 지시 ({model})\n{string.Join("\n", lines).TrimEnd()}");
     }
 
     public void Tool(ToolCall call, ToolResult result)
     {
-        var path = PathOf(call.Arguments);
-        var target = path is null ? call.Name : $"{call.Name} {path}";
+        var target = $"{call.Name} {Target(call.Arguments)}".TrimEnd();
         Write(result.IsError ? $"{target} → 실패: {Shorten(result.Content)}" : $"{target} → 성공");
     }
 
@@ -65,26 +81,33 @@ public sealed class AgentLog
         }
     }
 
-    private static string? PathOf(string arguments)
+    /// <summary>도구가 무엇을 대상으로 했는지: 경로, 검색이면 검색어와 경로. 다른 인자(코드)는 적지 않는다.</summary>
+    private static string Target(string arguments)
     {
         try
         {
             using var json = JsonDocument.Parse(arguments);
-            return json.RootElement.ValueKind == JsonValueKind.Object
-                && json.RootElement.TryGetProperty("path", out var path)
-                && path.ValueKind == JsonValueKind.String
-                ? path.GetString()
-                : null;
+            if (json.RootElement.ValueKind != JsonValueKind.Object) return "";
+            var path = Text(json.RootElement, "path");
+            var query = Text(json.RootElement, "query");
+            if (query is null) return path ?? "";
+            return path is null or "." ? $"\"{query}\"" : $"\"{query}\" in {path}";
         }
         catch (JsonException)
         {
-            return null;
+            return "";
         }
     }
 
+    private static string? Text(JsonElement args, string name) =>
+        args.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String && value.GetString() is { Length: > 0 } text
+            ? text
+            : null;
+
+    /// <summary>오류의 첫 줄만. edit_file 실패는 다음 줄부터 파일 내용(가장 비슷한 줄)을 보여주므로 적지 않는다.</summary>
     private static string Shorten(string text)
     {
-        var line = text.ReplaceLineEndings(" ").Trim();
+        var line = text.ReplaceLineEndings("\n").Split('\n')[0].Trim();
         return line.Length <= MaxErrorChars ? line : line[..MaxErrorChars] + "…";
     }
 }
