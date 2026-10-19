@@ -65,6 +65,9 @@ public sealed partial record InlineInstruction(string Instruction, string? Code,
         return string.Join(lineEnding, [.. above, body, .. below]) + (endsWithBreak ? lineEnding : "");
     }
 
+    /// <summary>주석 기호 바로 뒤에 <c>&gt;&gt;</c>가 오는 지시 줄인지 (내용이 비어 있어도).</summary>
+    public static bool IsMarkerLine(string line) => Marker().IsMatch(line);
+
     /// <summary><c>% &gt;&gt; 벡터화해줘</c> → <c>% 벡터화해줘</c>. 지시 줄이 아니거나 내용이 없으면 null.</summary>
     public static string? ToPlainComment(string line)
     {

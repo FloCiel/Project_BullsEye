@@ -9,6 +9,7 @@ public class QuickAgentControllerTests : IDisposable
     private readonly FakeClipboard _clipboard = new();
     private readonly TempFolder _usb = new();
     private readonly List<QuickAgentReport> _reports = [];
+    private readonly List<string> _sessionFolders = [];
     private string? _lastFolder;
 
     public void Dispose()
@@ -17,7 +18,7 @@ public class QuickAgentControllerTests : IDisposable
         _usb.Dispose();
     }
 
-    private QuickAgentController Create(string title, string? selection)
+    private QuickAgentController Create(string title, string? selection, IChatProvider? provider = null)
     {
         var controller = new QuickAgentController(
             new FakeWindows(new ForegroundWindow(1, "MATLAB.exe", title)),
@@ -27,10 +28,11 @@ public class QuickAgentControllerTests : IDisposable
             LanguageDetector.Default,
             (folder, approver) =>
             {
+                _sessionFolders.Add(folder);
                 var workspace = new AgentWorkspace(folder);
                 var backup = new AgentBackup(workspace, _usb.Path, DateTimeOffset.Now);
                 var session = new AgentSession(
-                    new MockProvider(TimeSpan.Zero), workspace, approver, new AgentOptions("mock/model", true, ReasoningEffort.Off), backup);
+                    provider ?? new MockProvider(TimeSpan.Zero), workspace, approver, new AgentOptions("mock/model", true, ReasoningEffort.Off), backup);
                 return (session, backup);
             },
             () => _lastFolder,
@@ -41,20 +43,23 @@ public class QuickAgentControllerTests : IDisposable
 
     private string Title(string file = "rect.m", string mark = "") => $@"Editor - {Path.Combine(_folder.Path, file)}{mark}";
 
+    private string Content(string file = "rect.m") => File.ReadAllText(Path.Combine(_folder.Path, file));
+
     [Fact]
     public async Task InstructionComment_RunsWithoutWindow_AutoAppliesAndBacksUp()
     {
-        _folder.File("rect.m", "function a = rect(w, h)\r\na = w * h;\r\nend\r\n");
+        _folder.File("rect.m", "% >> 검토해줘\r\nfunction a = rect(w, h)\r\na = w * h;\r\nend\r\n");
 
         var (handled, _) = await Create(Title(), "% >> 검토해줘").OnHotkeyAsync();
 
         Assert.True(handled);
-        Assert.Contains(MockProvider.MockComment, File.ReadAllText(Path.Combine(_folder.Path, "rect.m")));
+        // mock은 첫 줄 아래에 주석을 넣는다.
+        Assert.Equal($"% >> 검토해줘\r\n{MockProvider.MockComment}\r\nfunction a = rect(w, h)\r\na = w * h;\r\nend\r\n", Content());
         var report = Assert.Single(_reports);
         Assert.Equal(AgentStatus.Done, report.Status);
         Assert.Equal(["rect.m"], report.ChangedFiles);
         Assert.NotNull(report.BackupFolder);
-        Assert.True(File.Exists(Path.Combine(report.BackupFolder!, "rect.m")));
+        Assert.StartsWith("% >> 검토해줘", File.ReadAllText(Path.Combine(report.BackupFolder!, "rect.m")));
         Assert.Equal(SessionStatus.Done, _indicator.Statuses[^1]);
         Assert.Contains("1개 파일", _indicator.Shown[^1].Message);
         Assert.Contains("Ctrl+V", _indicator.Shown[^1].Message);
@@ -97,31 +102,132 @@ public class QuickAgentControllerTests : IDisposable
         await Create(Title(mark: "*"), "% >> 고쳐줘").OnHotkeyAsync();
 
         Assert.Equal((SessionStatus.Failed, QuickAgentController.UnsavedMessage), Assert.Single(_indicator.Shown));
-        Assert.Equal("x = 1;", File.ReadAllText(Path.Combine(_folder.Path, "rect.m")));
+        Assert.Equal("x = 1;", Content());
     }
 
     [Fact]
-    public async Task TitleWithoutPath_UsesLastFolder_OrFails()
+    public async Task SelectionNotInSavedFile_IsRefused()
+    {
+        // 제목에 '*'가 없어도(도킹·다른 편집기) 디스크 내용과 다르면 저장하지 않은 것이다.
+        _folder.File("rect.m", "x = 1;\n");
+
+        await Create(Title(), "% >> 고쳐줘\nx = 1;").OnHotkeyAsync();
+
+        var (status, message) = Assert.Single(_indicator.Shown);
+        Assert.Equal(SessionStatus.Failed, status);
+        Assert.Contains("저장된 rect.m 파일과 다릅니다", message);
+        Assert.Empty(_sessionFolders);
+    }
+
+    [Fact]
+    public async Task TitleWithoutPath_FindsSelectionInLastFolder()
     {
         await Create("MATLAB R2024b", "% >> 만들어줘").OnHotkeyAsync();
         Assert.Equal((SessionStatus.Failed, QuickAgentController.NoFolderMessage), Assert.Single(_indicator.Shown));
 
+        _folder.File("other.m", "y = 2;\n");
+        _folder.File("sub/rect.m", "% >> 만들어줘\nx = 1;\n");
         _lastFolder = _folder.Path;
         await Create("MATLAB R2024b", "% >> 만들어줘").OnHotkeyAsync();
-        Assert.True(File.Exists(Path.Combine(_folder.Path, MockProvider.MockFileName)));
+
+        Assert.Equal([_folder.Path], _sessionFolders);
+        Assert.Equal(AgentStatus.Done, Assert.Single(_reports).Status);
     }
 
     [Fact]
-    public void Instruction_NamesCurrentFile_AndForbidsQuestions()
+    public async Task TitleWithoutPath_SelectionNotInLastFolder_IsRefused()
+    {
+        // 다른 프로그램(파이썬 편집기 등)에서 누른 경우: 지난 폴더를 고치지 않는다.
+        _folder.File("rect.m", "x = 1;\n");
+        _lastFolder = _folder.Path;
+
+        await Create("main.py - Visual Studio Code", "# >> 정리해줘").OnHotkeyAsync();
+
+        Assert.Contains("찾지 못했습니다", Assert.Single(_indicator.Shown).Message);
+        Assert.Empty(_sessionFolders);
+        Assert.Equal("x = 1;\n", Content());
+    }
+
+    [Fact]
+    public async Task TitleWithoutPath_SelectionInSeveralFiles_IsRefused()
+    {
+        _folder.File("a.m", "% >> 정리해줘\n");
+        _folder.File("b.m", "% >> 정리해줘\n");
+        _lastFolder = _folder.Path;
+
+        await Create("MATLAB R2024b", "% >> 정리해줘").OnHotkeyAsync();
+
+        Assert.Contains("여러 파일(a.m, b.m)", Assert.Single(_indicator.Shown).Message);
+        Assert.Empty(_sessionFolders);
+    }
+
+    [Fact]
+    public void Instruction_NamesFileAndSelectedLines_AndForbidsQuestions()
     {
         var inline = InlineInstruction.Parse("% >> 계산기 만들어줘\nx = 1;")!;
+        var location = new SelectionLocation(@"C:\work", "test.m", 3, 4, [(3, "% >> 계산기 만들어줘")]);
 
-        var text = QuickAgentController.BuildInstruction(inline, @"Editor - C:\work\test.m");
+        var text = QuickAgentController.BuildInstruction(inline, location);
 
         Assert.StartsWith("계산기 만들어줘", text);
-        Assert.Contains("written in test.m", text);
+        Assert.Contains("written in test.m. The selection is lines 3-4 of that file", text);
         Assert.Contains("x = 1;", text);
         Assert.Contains("Do not ask", text);
+    }
+}
+
+public class SelectionLocatorTests : IDisposable
+{
+    private readonly TempFolder _folder = new();
+
+    public void Dispose() => _folder.Dispose();
+
+    [Fact]
+    public void TitleFile_GivesSelectedLinesAndInstructionLines()
+    {
+        _folder.File("rect.m", "function a = rect(w, h)\r\n    % >> 벡터화\r\n    a = w * h;\r\nend\r\n");
+
+        // 선택은 줄 중간에서 시작할 수 있고, 끝 줄바꿈까지 잡히기도 한다.
+        var (location, error) = SelectionLocator.Locate("% >> 벡터화\r\n    a = w * h;\r\n", Path.Combine(_folder.Path, "rect.m"), null);
+
+        Assert.Null(error);
+        Assert.Equal(new SelectionLocation(_folder.Path, "rect.m", 2, 3, location!.InstructionLines), location);
+        Assert.Equal([(2, "    % >> 벡터화")], location.InstructionLines);
+    }
+
+    [Fact]
+    public void SameTextTwiceInFile_KnowsFileButNotLines()
+    {
+        _folder.File("rect.m", "% >> 고쳐\nx = 1;\n% >> 고쳐\n");
+
+        var (location, _) = SelectionLocator.Locate("% >> 고쳐", Path.Combine(_folder.Path, "rect.m"), null);
+
+        Assert.Equal("rect.m", location!.File);
+        Assert.Null(location.FirstLine);
+        Assert.Empty(location.InstructionLines);
+    }
+
+    [Fact]
+    public void LastFolder_SkipsBinaryFilesAndFindsNestedFile()
+    {
+        _folder.Bytes("data.mat", [0x25, 0x20, 0x3E, 0x3E, 0x00]);
+        _folder.File("lab/rect.m", "x = 1;\n% >> 정리\n");
+
+        var (location, error) = SelectionLocator.Locate("% >> 정리", null, _folder.Path);
+
+        Assert.Null(error);
+        Assert.Equal(("lab/rect.m", 2), (location!.File, location.FirstLine));
+    }
+
+    [Fact]
+    public void TitleFileThatIsNotText_ExplainsWhy()
+    {
+        _folder.Bytes("live.mlx", [0x50, 0x4B, 0x03, 0x04, 0x00]);
+
+        var (location, error) = SelectionLocator.Locate("% >> 정리", Path.Combine(_folder.Path, "live.mlx"), null);
+
+        Assert.Null(location);
+        Assert.Contains("live.mlx 파일을 텍스트로 읽지 못해", error);
     }
 }
 

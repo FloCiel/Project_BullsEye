@@ -55,7 +55,7 @@ public sealed class AutoApprover : IChangeApprover
 /// (변경은 자동 적용 + 백업, 진행은 화면 구석 점), 없으면 에이전트 창을 열도록 false를 돌려준다.
 /// </summary>
 /// <param name="createSession">작업 폴더와 승인자로 세션을 만든다 (백업 폴더도 이때 정해진다).</param>
-/// <param name="fallbackFolder">창 제목에 경로가 없을 때 쓸 폴더 (지난번 폴더). 없으면 null.</param>
+/// <param name="fallbackFolder">창 제목에 경로가 없을 때 선택 내용을 찾아볼 폴더 (지난번 폴더). 없으면 null.</param>
 public sealed class QuickAgentController(
     IForegroundWindowProbe windows,
     ISelectionCapture selection,
@@ -111,24 +111,27 @@ public sealed class QuickAgentController(
             return (true, window.Title);
         }
 
-        var folder = Existing(MatlabFolder.FromWindowTitle(window.Title)) ?? Existing(fallbackFolder());
-        if (folder is null)
+        // 묻지 않고 고치므로, 선택 내용이 실제로 들어 있는 저장된 파일을 찾은 뒤에만 실행한다
+        // (제목에 경로가 없는 도킹 편집기에서 엉뚱한 지난 폴더를 고치지 않게, 저장 안 한 변경도 여기서 걸린다).
+        var (location, error) = SelectionLocator.Locate(text!, MatlabFolder.FilePathIn(window.Title), Existing(fallbackFolder()));
+        if (location is null)
         {
-            indicator.Show(SessionStatus.Failed, NoFolderMessage);
+            indicator.Show(SessionStatus.Failed, error ?? NoFolderMessage);
             return (true, window.Title);
         }
 
         var prefix = CommentPrefix.For(languages.Detect(window.ProcessName, window.Title));
-        await RunAsync(folder, BuildInstruction(inline, window.Title), prefix);
+        await RunAsync(location, BuildInstruction(inline, location), prefix);
         return (true, window.Title);
     }
 
-    /// <summary>창 없는 실행은 되물을 수 없으므로, 지시에 현재 파일과 "끝까지 진행"을 덧붙인다.</summary>
-    internal static string BuildInstruction(InlineInstruction inline, string title)
+    /// <summary>창 없는 실행은 되물을 수 없으므로, 지시에 현재 파일 · 선택 위치 · "끝까지 진행"을 덧붙인다.</summary>
+    internal static string BuildInstruction(InlineInstruction inline, SelectionLocation location)
     {
         var parts = new List<string> { inline.Instruction, "" };
-        var path = MatlabFolder.FilePathIn(title);
-        if (path is not null) parts.Add($"(The instruction was written in {Path.GetFileName(path)}.)");
+        parts.Add(location.FirstLine is { } first
+            ? $"(The instruction was written in {location.File}. The selection is lines {first}-{location.LastLine} of that file; \"here\" means that place.)"
+            : $"(The instruction was written in {location.File}.)");
         if (inline.Code is not null)
         {
             parts.Add("Selected code:");
@@ -141,10 +144,10 @@ public sealed class QuickAgentController(
         return string.Join("\n", parts);
     }
 
-    private async Task RunAsync(string folder, string instruction, string commentPrefix)
+    private async Task RunAsync(SelectionLocation location, string instruction, string commentPrefix)
     {
         var approver = new AutoApprover();
-        var (session, backup) = createSession(folder, approver);
+        var (session, backup) = createSession(location.Folder, approver);
         session.Progress += (_, e) =>
         {
             switch (e)
