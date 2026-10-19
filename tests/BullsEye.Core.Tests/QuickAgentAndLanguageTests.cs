@@ -93,6 +93,49 @@ public class QuickAgentControllerTests : IDisposable
         Assert.Equal("", new QuickAgentReport(AgentStatus.Done, [], "  ", null).ToClipboardText("% "));
     }
 
+    [Fact]
+    public void ClipboardText_Failure_ListsChangesInsteadOfReply()
+    {
+        var report = new QuickAgentReport(AgentStatus.Failed, ["a.m", "b.m"], "중간 답", @"D:\backup", "한도에 도달했습니다.");
+
+        Assert.Equal(
+            "% BullsEye 에이전트 — 실패: 한도에 도달했습니다.\r\n% 바뀐 파일: a.m, b.m\r\n% 이미 적용한 변경은 남아 있습니다.\r\n% 원본: D:\\backup\r\n",
+            report.ToClipboardText("% "));
+    }
+
+    [Fact]
+    public async Task FailureAfterChanges_CopiesWhatChanged_AndKeepsInstruction()
+    {
+        _folder.File("rect.m", "% >> 함수 만들어줘\n");
+        var provider = new FakeProvider()
+            .Reply(new ToolCallDelta(0, "c1", "write_file", """{"path":"area.m","content":"function a = area(r)\na = pi*r^2;\nend\n"}"""), new Completed())
+            .Reply(new StreamFailed("server error"));
+
+        await Create(Title(), "% >> 함수 만들어줘", provider).OnHotkeyAsync();
+
+        Assert.True(File.Exists(Path.Combine(_folder.Path, "area.m")));
+        var pasted = Assert.Single(_clipboard.Writes);
+        Assert.StartsWith("% BullsEye 에이전트 — 실패: ", pasted);
+        Assert.Contains("% 바뀐 파일: area.m\r\n% 이미 적용한 변경은 남아 있습니다.\r\n", pasted);
+        var (status, message) = _indicator.Shown[^1];
+        Assert.Equal(SessionStatus.Failed, status);
+        Assert.Contains("1개 파일은 이미 바뀜", message);
+        // 실패면 지시 줄을 그대로 둬서 단축키를 다시 누르면 재시도된다.
+        Assert.Equal("% >> 함수 만들어줘\n", Content());
+    }
+
+    [Fact]
+    public async Task FailureWithoutChanges_LeavesClipboardAlone()
+    {
+        _folder.File("rect.m", "% >> 함수 만들어줘\n");
+        var provider = new FakeProvider().Reply(new StreamFailed("server error"));
+
+        await Create(Title(), "% >> 함수 만들어줘", provider).OnHotkeyAsync();
+
+        Assert.Empty(_clipboard.Writes);
+        Assert.Equal(SessionStatus.Failed, _indicator.Statuses[^1]);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("x = 1;")]

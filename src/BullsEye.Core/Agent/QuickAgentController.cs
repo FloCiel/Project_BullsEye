@@ -3,18 +3,23 @@ namespace BullsEye.Core;
 /// <summary>창 없이 돌린 에이전트 작업의 끝. 클립보드에 주석으로 넣어 Ctrl+V로 볼 수 있게 한다.</summary>
 /// <param name="ChangedFiles">이번 작업에서 바꾸거나 만든 파일 (작업 폴더 기준).</param>
 /// <param name="Reply">모델의 마지막 답 (요약).</param>
-public sealed record QuickAgentReport(AgentStatus Status, IReadOnlyList<string> ChangedFiles, string Reply, string? BackupFolder)
+/// <param name="Failure">실패했으면 그 이유. 실패해도 그 전에 적용한 변경은 남는다.</param>
+public sealed record QuickAgentReport(
+    AgentStatus Status, IReadOnlyList<string> ChangedFiles, string Reply, string? BackupFolder, string? Failure = null)
 {
     /// <summary>
     /// 편집기에 붙여넣어도 코드가 깨지지 않게 줄마다 주석 기호를 붙인 요약.
-    /// 바뀐 파일 · 답 · 백업 위치 순서. 붙일 것이 없으면 빈 문자열.
+    /// (실패 이유) · 바뀐 파일 · 답 · 백업 위치 순서. 실패면 답 대신 "변경은 남아 있음". 붙일 것이 없으면 빈 문자열.
     /// </summary>
     public string ToClipboardText(string commentPrefix)
     {
         var lines = new List<string>();
-        if (ChangedFiles.Count > 0) lines.Add($"BullsEye 에이전트 — 바뀐 파일: {string.Join(", ", ChangedFiles)}");
+        if (Failure is not null) lines.Add($"BullsEye 에이전트 — 실패: {Failure.ReplaceLineEndings(" ")}");
+        var changed = string.Join(", ", ChangedFiles);
+        if (ChangedFiles.Count > 0) lines.Add(Failure is null ? $"BullsEye 에이전트 — 바뀐 파일: {changed}" : $"바뀐 파일: {changed}");
         if (Status == AgentStatus.Cancelled) lines.Add("취소했습니다. 이미 적용한 변경은 남아 있습니다.");
-        lines.AddRange(Reply.ReplaceLineEndings("\n").Trim().Split('\n').Where((line, i) => i > 0 || line.Length > 0));
+        if (Failure is not null && ChangedFiles.Count > 0) lines.Add("이미 적용한 변경은 남아 있습니다.");
+        if (Failure is null) lines.AddRange(Reply.ReplaceLineEndings("\n").Trim().Split('\n').Where((line, i) => i > 0 || line.Length > 0));
         if (BackupFolder is not null) lines.Add($"원본: {BackupFolder}");
         if (lines.Count == 0) return "";
 
@@ -185,11 +190,13 @@ public sealed class QuickAgentController(
 
         var reply = session.Messages.LastOrDefault(m => m.Role == ChatRole.Assistant)?.Content ?? "";
         var changed = approver.ChangedFiles;
-        var report = new QuickAgentReport(session.Status, changed, reply, backup.Count > 0 ? backup.Folder : null);
+        var failure = session.Status == AgentStatus.Failed ? session.Error?.Message ?? "실패했습니다" : null;
+        var report = new QuickAgentReport(session.Status, changed, reply, backup.Count > 0 ? backup.Folder : null, failure);
 
-        // 답은 알림 대신 클립보드로: 편집기에서 Ctrl+V 하면 주석으로 보인다. 실패는 점과 툴팁으로만.
+        // 답은 알림 대신 클립보드로: 편집기에서 Ctrl+V 하면 주석으로 보인다.
+        // 실패는 점과 툴팁으로 알리되, 그 전에 바뀐 파일이 있으면 무엇이 바뀌었는지도 클립보드에 남긴다.
         var copied = false;
-        if (session.Status != AgentStatus.Failed && report.ToClipboardText(commentPrefix) is { Length: > 0 } text)
+        if ((failure is null || changed.Count > 0) && report.ToClipboardText(commentPrefix) is { Length: > 0 } text)
         {
             clipboard.SetText(text);
             copied = true;
@@ -200,7 +207,7 @@ public sealed class QuickAgentController(
         {
             AgentStatus.Done => (SessionStatus.Done, (changed.Count > 0 ? $"완료 — {changed.Count}개 파일 바뀜" : "완료 — 바뀐 파일 없음") + paste),
             AgentStatus.Cancelled => (SessionStatus.Cancelled, "취소했습니다" + paste),
-            _ => (SessionStatus.Failed, session.Error?.Message ?? "실패했습니다"),
+            _ => (SessionStatus.Failed, failure + (changed.Count > 0 ? $" — {changed.Count}개 파일은 이미 바뀜 · Ctrl+V로 내용 보기" : "")),
         };
         indicator.Show(status, message);
         Finished?.Invoke(this, report);
